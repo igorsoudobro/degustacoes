@@ -271,11 +271,24 @@ async function resolveItem(){
     candidates.push({ kind:"ownerDrive", userKey: p.userPath });
   }
 
-  // 2) Caminho principal e mais confiável: usar o próprio /me/drive e buscar por id do item.
-  //    Como o sourcedoc é o driveItem id em muitos casos, tentamos direto.
+  // 2) Caminho principal: buscar o arquivo pelo NOME no drive do usuário.
+  //    Mais robusto que o sourcedoc, que nem sempre casa com o driveItem id.
+  const fileName = p.file || "Controle de Degustações.xlsx";
+  const nameNoExt = fileName.replace(/\.[^.]+$/, "");
+  const searchTerm = "Controle de Degusta"; // prefixo tolerante a acento/singular-plural
+
   const tries = [
-    async () => { const d = await graph("/me/drive/items/" + p.doc); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; },
-    async () => { const d = await graph("/me/drive/root:/" + encodeURIComponent(p.file) + ":"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; }
+    // a) busca por termo no OneDrive do usuário logado
+    async () => {
+      const r = await graph("/me/drive/root/search(q='" + encodeURIComponent(searchTerm) + "')?$select=id,name,parentReference,file");
+      const hit = (r.value||[]).find(x => x.file && /\.xlsx?$/i.test(x.name));
+      if(!hit) throw new Error("busca sem resultado");
+      return { item: hit, driveId: hit.parentReference && hit.parentReference.driveId };
+    },
+    // b) caminho direto pelo nome exato na raiz
+    async () => { const d = await graph("/me/drive/root:/" + encodeURIComponent(fileName) + ":?$select=id,name,parentReference"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; },
+    // c) fallback: tentar o sourcedoc como id do item
+    async () => { const d = await graph("/me/drive/items/" + p.doc + "?$select=id,name,parentReference"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; }
   ];
 
   let lastErr = null;
