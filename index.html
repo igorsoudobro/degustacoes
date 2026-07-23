@@ -157,7 +157,7 @@ tbody tr.new-row{animation:flashin 2.4s ease-out}
    ============================================================ */
 const CONFIG = {
   // 1) Client ID do App registrado no Entra ID (Azure AD) da Dobro.
-  clientId: "COLE_AQUI_O_CLIENT_ID",
+  clientId: "b22e93eb-c6a1-442a-9fd7-07c580cd6666",
 
   // 2) Tenant. Use "organizations" (padrão) ou o ID/domínio do tenant Dobro,
   //    ex.: "soudobro.onmicrosoft.com" ou o GUID do diretório.
@@ -211,7 +211,7 @@ function parseFileUrl(url){
 function buildMsal(){
   const authority = "https://login.microsoftonline.com/" + (CONFIG.tenant || "organizations");
   return new window.msal.PublicClientApplication({
-    auth: { clientId: CONFIG.clientId, authority, redirectUri: window.location.href.split('#')[0] },
+    auth: { clientId: CONFIG.clientId, authority, redirectUri: "https://igorsoudobro.github.io/degustacoes/" },
     cache: { cacheLocation: "sessionStorage" }
   });
 }
