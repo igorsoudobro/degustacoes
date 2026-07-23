@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dobro · Degustações</title>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>
+/* fallback: se o CDN principal falhar, carrega de um espelho */
+if(!window.msal){
+  document.write('<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"><\/script>');
+}
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Semi+Condensed:wght@500;600;700;800&family=Barlow+Condensed:wght@600;700&display=swap');
 :root{
@@ -209,6 +215,9 @@ function parseFileUrl(url){
 
 /* ---------- MSAL ---------- */
 function buildMsal(){
+  if(!window.msal || !window.msal.PublicClientApplication){
+    throw new Error("A biblioteca de login (MSAL) não carregou. Verifique a conexão ou recarregue a página (Ctrl+Shift+R).");
+  }
   const authority = "https://login.microsoftonline.com/" + (CONFIG.tenant || "organizations");
   return new window.msal.PublicClientApplication({
     auth: { clientId: CONFIG.clientId, authority, redirectUri: "https://igorsoudobro.github.io/degustacoes/" },
