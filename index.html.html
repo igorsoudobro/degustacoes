@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dobro · Degustações</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Semi+Condensed:wght@500;600;700;800&family=Barlow+Condensed:wght@600;700&display=swap');
+:root{
+  --navy:#2A3E7E; --navy-d:#1E2E5F; --yellow:#D8C733; --sky:#5188DF;
+  --ink:#1A2138; --muted:#6B7490; --line:#E3E7F2; --bg:#F4F6FB; --card:#FFFFFF;
+  --pos:#1F9D6B; --neg:#D9534F; --warn:#E0A100; --grey:#EEF0F6;
+  --shadow:0 1px 3px rgba(30,46,95,.06),0 4px 16px rgba(30,46,95,.05);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Barlow',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+h1,h2,h3,h4{font-family:'Barlow Semi Condensed','Barlow',sans-serif;font-weight:700;letter-spacing:-.01em}
+.mono{font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit}
+
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--navy),var(--navy-d));padding:20px}
+.login-card{background:#fff;border-radius:18px;padding:40px;width:400px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.login-logo .mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--yellow),#c4b41f);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--navy);font-size:26px;font-family:'Barlow Condensed'}
+.login-logo h1{font-size:24px;color:var(--navy)}
+.login-sub{color:var(--muted);font-size:13px;margin-bottom:26px;font-weight:500}
+.login-btn{width:100%;margin-top:8px;background:var(--navy);color:#fff;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:15px;transition:.15s;display:flex;align-items:center;justify-content:center;gap:9px}
+.login-btn:hover{background:var(--navy-d)}
+.login-btn svg{width:18px;height:18px}
+.login-err{color:var(--neg);font-size:13px;margin-top:14px;font-weight:600;min-height:18px;text-align:center;line-height:1.4}
+.login-foot{text-align:center;color:var(--muted);font-size:11px;margin-top:22px;line-height:1.5}
+
+/* APP SHELL */
+.app{display:none;min-height:100vh}
+.topbar{background:var(--navy);color:#fff;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:50;box-shadow:0 2px 12px rgba(30,46,95,.2)}
+.topbar .brand{display:flex;align-items:center;gap:11px}
+.topbar .mark{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--yellow),#c4b41f);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--navy);font-size:19px;font-family:'Barlow Condensed'}
+.topbar .brand h1{font-size:17px}
+.topbar .brand .role{font-size:10px;color:#B9C4E8;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.topbar .who{display:flex;align-items:center;gap:14px;font-size:13px}
+.topbar .who .name{font-weight:600}
+.logout{background:rgba(255,255,255,.13);color:#fff;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600}
+.logout:hover{background:rgba(255,255,255,.25)}
+
+/* STATUS BAR */
+.statusbar{background:#fff;border-bottom:1px solid var(--line);padding:11px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:58px;z-index:40;font-size:12.5px}
+.statusbar .live{display:flex;align-items:center;gap:7px;font-weight:600;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--pos);position:relative}
+.dot.pulse::after{content:'';position:absolute;inset:0;border-radius:50%;background:var(--pos);animation:pulse 1.8s ease-out infinite}
+.dot.stale{background:var(--warn)} .dot.err{background:var(--neg)}
+@keyframes pulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(3);opacity:0}}
+.statusbar .sep{color:var(--line)}
+.statusbar .refnow{margin-left:auto;background:var(--grey);border:1px solid var(--line);border-radius:8px;padding:6px 13px;font-size:12px;font-weight:600;color:var(--navy);display:flex;align-items:center;gap:6px}
+.statusbar .refnow:hover{background:#E4E8F4}
+.statusbar .refnow.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.seg{display:flex;background:var(--grey);border-radius:8px;padding:3px}
+.seg button{border:none;background:transparent;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted)}
+.seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+/* CONTENT */
+.content{max-width:1360px;margin:0 auto;padding:24px 22px}
+
+/* KPI */
+.kpirow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:#fff;border-radius:12px;padding:15px 17px;box-shadow:var(--shadow);border-left:4px solid var(--sky)}
+.kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.kpi .val{font-size:27px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;margin-top:3px}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:1px}
+.kpi.accent{border-left-color:var(--yellow)}
+.kpi.pos{border-left-color:var(--pos)} .kpi.pos .val{color:var(--pos)}
+.kpi.sens{border-left-color:var(--warn)}
+
+/* CARDS/TABLES */
+.card{background:#fff;border-radius:12px;box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
+.card-h{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-h h3{font-size:16px;color:var(--navy)}
+.card-h .hint{font-size:12px;color:var(--muted);font-weight:500}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:9px 14px;text-align:left;font-size:13px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--navy);color:#fff;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0}
+tbody tr:hover{background:#F8FAFE}
+tbody tr.new-row{animation:flashin 2.4s ease-out}
+@keyframes flashin{0%{background:#FCFAE8}60%{background:#FCFAE8}100%{background:transparent}}
+.rowlab{font-weight:600;color:var(--navy)}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.pill.g{background:#E4F5EE;color:var(--pos)}.pill.y{background:#FDF6E0;color:var(--warn)}.pill.r{background:#FBE7E6;color:var(--neg)}.pill.n{background:var(--grey);color:var(--muted)}
+.empty{padding:48px 20px;text-align:center;color:var(--muted)}
+.empty h4{color:var(--navy);font-size:16px;margin-bottom:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:880px){.grid2{grid-template-columns:1fr}}
+.bar-wrap{display:flex;align-items:center;gap:9px}
+.bar-track{flex:1;height:9px;border-radius:5px;background:var(--grey);overflow:hidden;min-width:60px}
+.bar-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--sky),var(--navy))}
+.bar-fill.y{background:linear-gradient(90deg,#e6d94f,var(--yellow))}
+.bar-num{font-size:12px;font-weight:700;color:var(--navy);min-width:34px;text-align:right}
+.note{background:#FDF6E0;color:#8A6D14;padding:10px 15px;border-radius:8px;font-size:12.5px;margin-bottom:18px;line-height:1.5}
+.foot{text-align:center;color:var(--muted);font-size:11px;padding:24px;line-height:1.6}
+
+/* SETUP BANNER (config missing) */
+.setup{background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:26px 28px;margin-bottom:22px;border-left:4px solid var(--warn)}
+.setup h3{color:var(--navy);font-size:17px;margin-bottom:10px}
+.setup p{font-size:13.5px;color:var(--ink);line-height:1.6;margin-bottom:8px}
+.setup code{background:var(--grey);padding:2px 7px;border-radius:5px;font-size:12.5px;font-family:ui-monospace,monospace;color:var(--navy)}
+.setup ol{margin:10px 0 4px 20px;font-size:13.5px;line-height:1.7}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo"><div class="mark">d</div><h1>Degustações</h1></div>
+    <div class="login-sub">Dobro · Controle de Degustações em tempo real</div>
+    <button class="login-btn" id="loginBtn">
+      <svg viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#fff"/><rect x="11" y="1" width="9" height="9" fill="#fff"/><rect x="1" y="11" width="9" height="9" fill="#fff"/><rect x="11" y="11" width="9" height="9" fill="#fff"/></svg>
+      Entrar com Microsoft
+    </button>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-foot">Acesso restrito · use sua conta Microsoft 365 da Dobro. Os dados são lidos diretamente da planilha no SharePoint e nunca saem do seu navegador.</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+  <div class="topbar">
+    <div class="brand"><div class="mark">d</div><div><h1>Degustações</h1><div class="role">Controle em tempo real</div></div></div>
+    <div class="who"><span class="name" id="whoName"></span><button class="logout" id="logoutBtn">Sair</button></div>
+  </div>
+
+  <div class="statusbar">
+    <div class="live"><span class="dot pulse" id="liveDot"></span><span id="liveText">Conectado</span></div>
+    <span class="sep">|</span>
+    <span id="lastUpd" style="color:var(--muted);font-weight:600">—</span>
+    <div class="seg" id="pollSeg" style="margin-left:12px">
+      <button data-ms="30000" class="on">30s</button>
+      <button data-ms="60000">1min</button>
+      <button data-ms="300000">5min</button>
+      <button data-ms="0">Manual</button>
+    </div>
+    <button class="refnow" id="refBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Atualizar</button>
+  </div>
+
+  <div class="content" id="content"></div>
+  <div class="foot">Dobro · Degustações — dados lidos em tempo real do SharePoint via Microsoft Graph, processados localmente. Confidencial.</div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIGURAÇÃO — preencha os 3 valores abaixo antes de usar.
+   Instruções detalhadas aparecem na tela se algo faltar.
+   ============================================================ */
+const CONFIG = {
+  // 1) Client ID do App registrado no Entra ID (Azure AD) da Dobro.
+  clientId: "COLE_AQUI_O_CLIENT_ID",
+
+  // 2) Tenant. Use "organizations" (padrão) ou o ID/domínio do tenant Dobro,
+  //    ex.: "soudobro.onmicrosoft.com" ou o GUID do diretório.
+  tenant: "organizations",
+
+  // 3) Link COMPLETO da planilha (o mesmo que você copiou do navegador).
+  //    O sourcedoc e o nome do arquivo são extraídos daqui automaticamente.
+  fileUrl: "https://soudobro-my.sharepoint.com/:x:/r/personal/igor_supino_soudobro_com_br/_layouts/15/Doc.aspx?sourcedoc=%7BE21364AF-0C93-47B0-AFF5-7EC1CACA01E3%7D&file=Controle%20de%20Degusta%C3%A7%C3%B5es.xlsx&action=edit&mobileredirect=true",
+
+  // Nome da planilha/aba a ler. Se o Forms grava numa aba específica,
+  // coloque aqui (ex.: "Respostas ao Formulário 1"). Vazio = primeira usada.
+  worksheet: ""
+};
+/* ============================================================ */
+
+const el = id => document.getElementById(id);
+const GRAPH = "https://graph.microsoft.com/v1.0";
+const SCOPES = ["Files.Read.All", "Sites.Read.All", "User.Read"];
+
+let msalApp = null, account = null;
+let POLL_MS = 30000, pollTimer = null;
+let LAST_ROWS = null, LAST_KEYSET = new Set();
+let driveId = null, itemId = null, resolved = false;
+
+/* ---------- helpers ---------- */
+function isConfigured(){
+  return CONFIG.clientId && CONFIG.clientId.indexOf("COLE_AQUI") === -1;
+}
+function fmtNow(d){
+  return d.toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'2-digit'});
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* Extrai sourcedoc (GUID) e nome do arquivo a partir do link do SharePoint */
+function parseFileUrl(url){
+  try{
+    const u = new URL(url);
+    let doc = u.searchParams.get("sourcedoc") || "";
+    doc = decodeURIComponent(doc).replace(/[{}]/g,"");
+    let file = u.searchParams.get("file") || "";
+    file = decodeURIComponent(file);
+    // host + caminho pessoal, para montar chamadas de drive quando necessário
+    const host = u.host;
+    const m = u.pathname.match(/\/personal\/([^\/]+)\//i);
+    const userPath = m ? m[1] : "";
+    return { doc, file, host, userPath };
+  }catch(e){ return { doc:"", file:"", host:"", userPath:"" }; }
+}
+
+/* ---------- MSAL ---------- */
+function buildMsal(){
+  const authority = "https://login.microsoftonline.com/" + (CONFIG.tenant || "organizations");
+  return new window.msal.PublicClientApplication({
+    auth: { clientId: CONFIG.clientId, authority, redirectUri: window.location.href.split('#')[0] },
+    cache: { cacheLocation: "sessionStorage" }
+  });
+}
+
+async function getToken(interactive){
+  const req = { scopes: SCOPES, account };
+  try{
+    const r = await msalApp.acquireTokenSilent(req);
+    return r.accessToken;
+  }catch(e){
+    if(interactive){
+      const r = await msalApp.acquireTokenPopup({ scopes: SCOPES });
+      account = r.account;
+      return r.accessToken;
+    }
+    throw e;
+  }
+}
+
+async function graph(path){
+  const token = await getToken(false);
+  const res = await fetch(GRAPH + path, { headers: { Authorization: "Bearer " + token } });
+  if(!res.ok){
+    const body = await res.text();
+    const err = new Error("Graph " + res.status);
+    err.status = res.status; err.body = body;
+    throw err;
+  }
+  return res.json();
+}
+
+/* Resolve driveId + itemId a partir do sourcedoc.
+   Estratégia: buscar o item no OneDrive/SharePoint do usuário dono do link. */
+async function resolveItem(){
+  const p = parseFileUrl(CONFIG.fileUrl);
+  if(!p.doc) throw new Error("Não consegui extrair o sourcedoc do link. Verifique CONFIG.fileUrl.");
+
+  // 1) Descobrir o drive pessoal do dono do arquivo, se o link for /personal/...
+  //    Tentamos primeiro pelo próprio usuário logado (caso seja o dono).
+  //    Depois pelo site pessoal do dono via /users/{upn}/drive.
+  const candidates = [];
+
+  // dono derivado do path: igor_supino_soudobro_com_br -> igor.supino@soudobro.com.br
+  if(p.userPath){
+    const upn = p.userPath
+      .replace(/_([a-z]{2,4})$/i, '.$1')          // ..._br -> ....br (aprox)
+      .replace(/_/g, m => m);                       // mantém, tratamos abaixo
+    // Reconstrução robusta: troca underscores por . e o último grupo vira domínio
+    const parts = p.userPath.split('_');
+    // heurística comum SharePoint: nome_sobrenome_dominio_com_br
+    // -> nome.sobrenome@dominio.com.br
+    let email = "";
+    if(parts.length >= 4){
+      const domainParts = parts.slice(-3); // com_br etc — varia
+      // tenta achar onde começa o domínio (primeiro segmento que costuma ser empresa)
+    }
+    candidates.push({ kind:"ownerDrive", userKey: p.userPath });
+  }
+
+  // 2) Caminho principal e mais confiável: usar o próprio /me/drive e buscar por id do item.
+  //    Como o sourcedoc é o driveItem id em muitos casos, tentamos direto.
+  const tries = [
+    async () => { const d = await graph("/me/drive/items/" + p.doc); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; },
+    async () => { const d = await graph("/me/drive/root:/" + encodeURIComponent(p.file) + ":"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; }
+  ];
+
+  let lastErr = null;
+  for(const t of tries){
+    try{
+      const r = await t();
+      if(r.item && r.item.id){
+        itemId = r.item.id;
+        driveId = r.driveId || (r.item.parentReference && r.item.parentReference.driveId);
+        if(!driveId){ const me = await graph("/me/drive"); driveId = me.id; }
+        resolved = true;
+        return;
+      }
+    }catch(e){ lastErr = e; }
+  }
+  const e = new Error("Não localizei o arquivo no seu OneDrive/SharePoint. " +
+    "Se a planilha for de OUTRA pessoa, ela precisa compartilhar com você, " +
+    "ou informe manualmente o driveId/itemId (veja instruções).");
+  e.cause = lastErr;
+  throw e;
+}
+
+/* Lê o conteúdo usado (usedRange) da worksheet via Graph Workbook API */
+async function readSheet(){
+  if(!resolved) await resolveItem();
+  const base = "/drives/" + driveId + "/items/" + itemId + "/workbook";
+  let wsPath;
+  if(CONFIG.worksheet){
+    wsPath = base + "/worksheets('" + encodeURIComponent(CONFIG.worksheet) + "')";
+  }else{
+    // primeira worksheet
+    const list = await graph(base + "/worksheets");
+    const first = (list.value && list.value[0]) ? list.value[0].name : "Sheet1";
+    wsPath = base + "/worksheets('" + encodeURIComponent(first) + "')";
+  }
+  const range = await graph(wsPath + "/usedRange(valuesOnly=true)?$select=values");
+  return range.values || [];
+}
+
+/* ---------- render de dados ---------- */
+function rowsFromMatrix(m){
+  if(!m || m.length < 1) return { headers:[], rows:[] };
+  const headers = m[0].map(h => String(h==null?'':h).trim());
+  const rows = [];
+  for(let i=1;i<m.length;i++){
+    const r = m[i];
+    if(!r || r.every(c => c===''||c==null)) continue;
+    const o = {}; headers.forEach((h,idx)=> o[h||('col'+idx)] = r[idx]);
+    o.__i = i;
+    rows.push(o);
+  }
+  return { headers, rows };
+}
+
+/* chave estável de uma linha para detectar novidades */
+function rowKey(o, headers){
+  return headers.map(h => String(o[h]==null?'':o[h])).join('¦');
+}
+
+function render(data){
+  const { headers, rows } = data;
+  const c = el('content');
+
+  if(!headers.length){
+    c.innerHTML = `<div class="card"><div class="empty"><h4>Planilha vazia</h4>Nenhuma linha encontrada ainda. Assim que a primeira resposta do formulário chegar, ela aparece aqui.</div></div>`;
+    return;
+  }
+
+  // detectar linhas novas comparando keysets
+  const keys = rows.map(r => rowKey(r, headers));
+  const newSet = new Set(keys);
+  const firstLoad = LAST_KEYSET.size === 0;
+  const novos = firstLoad ? new Set() : new Set(keys.filter(k => !LAST_KEYSET.has(k)));
+  LAST_KEYSET = newSet;
+
+  // heurística de colunas: tenta achar data, vendedor/responsável, cliente, produto, status
+  const findCol = (...alts) => headers.find(h => alts.some(a => h.toLowerCase().includes(a)));
+  const colData   = findCol('data','hora','carimbo','registro');
+  const colResp   = findCol('vendedor','responsáv','responsav','rca','consultor','representante');
+  const colCli    = findCol('cliente','razão','razao','cnpj','loja','estabelec');
+  const colProd   = findCol('produto','sku','item','sabor');
+  const colStatus = findCol('status','resultado','situa','feedback','aprov');
+
+  // KPIs
+  const total = rows.length;
+  const respostasHoje = colData ? rows.filter(r=>{
+    const v = String(r[colData]||''); const t=new Date();
+    const dd=String(t.getDate()).padStart(2,'0'), mm=String(t.getMonth()+1).padStart(2,'0'), yy=t.getFullYear();
+    return v.includes(dd+'/'+mm) || v.includes(yy+'-'+mm+'-'+dd);
+  }).length : null;
+
+  const respUnicos = colResp ? new Set(rows.map(r=>r[colResp]).filter(Boolean)).size : null;
+  const cliUnicos  = colCli ? new Set(rows.map(r=>r[colCli]).filter(Boolean)).size : null;
+
+  let kpis = `<div class="kpi accent"><div class="lab">Total de degustações</div><div class="val">${total}</div><div class="sub">respostas registradas</div></div>`;
+  if(respostasHoje!=null) kpis += `<div class="kpi pos"><div class="lab">Registradas hoje</div><div class="val">${respostasHoje}</div><div class="sub">${new Date().toLocaleDateString('pt-BR')}</div></div>`;
+  if(respUnicos!=null) kpis += `<div class="kpi"><div class="lab">${esc(colResp)}</div><div class="val">${respUnicos}</div><div class="sub">distintos</div></div>`;
+  if(cliUnicos!=null) kpis += `<div class="kpi"><div class="lab">Clientes</div><div class="val">${cliUnicos}</div><div class="sub">distintos</div></div>`;
+
+  // Ranking por responsável (barras)
+  let rankCard = '';
+  if(colResp){
+    const map = {}; rows.forEach(r=>{ const k=String(r[colResp]||'—').trim()||'—'; map[k]=(map[k]||0)+1; });
+    const arr = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+    const max = arr.length?arr[0][1]:1;
+    rankCard = `<div class="card"><div class="card-h"><h3>Degustações por ${esc(colResp.toLowerCase())}</h3><span class="hint">${arr.length} no total</span></div>
+      <div class="scroll"><table><thead><tr><th>${esc(colResp)}</th><th style="width:55%">Volume</th></tr></thead><tbody>
+      ${arr.map(([k,v])=>`<tr><td class="rowlab">${esc(k)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${(v/max*100).toFixed(1)}%"></div></div><span class="bar-num">${v}</span></div></td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  // Status (pills)
+  let statusCard = '';
+  if(colStatus){
+    const map = {}; rows.forEach(r=>{ const k=String(r[colStatus]||'—').trim()||'—'; map[k]=(map[k]||0)+1; });
+    const arr = Object.entries(map).sort((a,b)=>b[1]-a[1]);
+    const cls = k => { const s=k.toLowerCase(); if(/aprov|posit|sim|convert|fechad/.test(s))return'g'; if(/pend|aguard|talvez|avali/.test(s))return'y'; if(/reprov|negat|não|nao|recus|perd/.test(s))return'r'; return'n'; };
+    statusCard = `<div class="card"><div class="card-h"><h3>${esc(colStatus)}</h3></div>
+      <div class="scroll"><table><thead><tr><th>${esc(colStatus)}</th><th>Qtd.</th></tr></thead><tbody>
+      ${arr.map(([k,v])=>`<tr><td><span class="pill ${cls(k)}">${esc(k)}</span></td><td class="rowlab">${v}</td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  }
+
+  // Tabela completa (mais recentes primeiro)
+  const ordered = [...rows].reverse();
+  const showCols = headers.slice(0, 8); // limita largura; scroll horizontal cobre o resto
+  const tableRows = ordered.map(r=>{
+    const k = rowKey(r, headers);
+    const isNew = novos.has(k);
+    return `<tr class="${isNew?'new-row':''}">${showCols.map(h=>`<td>${esc(r[h])}</td>`).join('')}</tr>`;
+  }).join('');
+
+  const fullTable = `<div class="card"><div class="card-h"><h3>Todas as respostas</h3><span class="hint">${total} registros · mais recentes no topo${headers.length>showCols.length?' · role para ver todas as colunas →':''}</span></div>
+    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${tableRows || `<tr><td colspan="${showCols.length}" class="empty">Sem respostas ainda.</td></tr>`}</tbody></table></div></div>`;
+
+  const twoUp = (rankCard||statusCard) ? `<div class="grid2">${rankCard}${statusCard}</div>` : '';
+
+  c.innerHTML = `<div class="kpirow">${kpis}</div>${twoUp}${fullTable}`;
+}
+
+/* ---------- fluxo de atualização ---------- */
+function setLive(state, text){
+  const dot = el('liveDot');
+  dot.className = 'dot ' + (state==='ok'?'pulse':state==='stale'?'stale':state==='err'?'err':'');
+  el('liveText').textContent = text || (state==='ok'?'Conectado':state==='err'?'Erro':'—');
+}
+
+async function refresh(manual){
+  const btn = el('refBtn'); btn.classList.add('spin');
+  try{
+    const m = await readSheet();
+    const data = rowsFromMatrix(m);
+    LAST_ROWS = data;
+    render(data);
+    el('lastUpd').textContent = 'Atualizado ' + fmtNow(new Date());
+    setLive('ok');
+  }catch(e){
+    console.error(e);
+    setLive('err', 'Falha ao ler');
+    // se for erro de auth, tenta reautenticar interativamente
+    if(e.status === 401 || (e.message||'').includes('interaction_required')){
+      try{ await getToken(true); return refresh(manual); }catch(_){}
+    }
+    if(!LAST_ROWS){
+      el('content').innerHTML = renderError(e);
+    }else{
+      el('lastUpd').textContent = 'Falha ' + fmtNow(new Date()) + ' — exibindo última leitura';
+      setLive('stale','Dados desatualizados');
+    }
+  }finally{
+    setTimeout(()=>btn.classList.remove('spin'), 400);
+  }
+}
+
+function renderError(e){
+  const body = e.body ? `<p style="margin-top:8px"><code>${esc((e.body||'').slice(0,240))}</code></p>` : '';
+  return `<div class="setup">
+    <h3>Não consegui ler a planilha</h3>
+    <p>${esc(e.message||'Erro desconhecido.')}</p>
+    ${body}
+    <p style="margin-top:10px">Causas mais comuns:</p>
+    <ol>
+      <li>O app no Entra ID ainda não tem as permissões <code>Files.Read.All</code> / <code>Sites.Read.All</code> concedidas (consentimento de admin).</li>
+      <li>A planilha pertence a outra pessoa e não foi compartilhada com sua conta.</li>
+      <li>O <code>sourcedoc</code> do link não corresponde ao id do arquivo neste tenant — nesse caso, informe <code>driveId</code> e <code>itemId</code> manualmente.</li>
+    </ol>
+    <p style="margin-top:8px">Use <b>Atualizar</b> para tentar de novo depois de ajustar.</p>
+  </div>`;
+}
+
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  if(POLL_MS > 0) pollTimer = setInterval(()=>refresh(false), POLL_MS);
+}
+
+/* ---------- login / boot ---------- */
+async function afterLogin(){
+  el('loginScreen').style.display = 'none';
+  el('app').style.display = 'block';
+  el('whoName').textContent = (account && (account.name || account.username)) || '';
+  setLive('ok','Conectado');
+  await refresh(true);
+  startPolling();
+}
+
+async function doLogin(){
+  const btn = el('loginBtn'), err = el('loginErr');
+  err.textContent = '';
+  if(!isConfigured()){
+    showSetupInLogin();
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Conectando...';
+  try{
+    if(!msalApp) msalApp = buildMsal();
+    const r = await msalApp.loginPopup({ scopes: SCOPES });
+    account = r.account;
+    msalApp.setActiveAccount(account);
+    await afterLogin();
+  }catch(e){
+    console.error(e);
+    err.textContent = 'Não foi possível entrar: ' + (e.errorMessage || e.message || 'erro desconhecido') + '. Verifique se o Client ID e o redirect URI estão corretos no Entra ID.';
+    btn.disabled = false;
+    btn.innerHTML = 'Tentar novamente';
+  }
+}
+
+function showSetupInLogin(){
+  el('loginScreen').style.display = 'none';
+  el('app').style.display = 'block';
+  el('whoName').textContent = '';
+  el('lastUpd').textContent = 'Configuração pendente';
+  setLive('err','Não configurado');
+  el('content').innerHTML = `<div class="setup">
+    <h3>Falta configurar o acesso (só uma vez)</h3>
+    <p>Este painel lê a planilha de degustações direto do SharePoint usando a conta Microsoft 365 de quem abre. Para isso funcionar, alguém com acesso de administrador precisa registrar um aplicativo no <b>Entra ID (Azure AD)</b> da Dobro e colar o <code>Client ID</code> aqui no arquivo.</p>
+    <ol>
+      <li>No portal do Entra ID → <b>App registrations</b> → <b>New registration</b>. Dê um nome (ex.: "Painel Degustações Dobro").</li>
+      <li>Em <b>Redirect URI</b>, escolha <b>Single-page application (SPA)</b> e informe a URL onde este HTML vai rodar (ex.: o endereço interno da empresa, ou <code>http://localhost</code> para testar).</li>
+      <li>Copie o <b>Application (client) ID</b> e cole em <code>CONFIG.clientId</code> no topo do arquivo.</li>
+      <li>Em <b>API permissions</b> → adicione <b>Microsoft Graph</b> (delegadas): <code>Files.Read.All</code>, <code>Sites.Read.All</code>, <code>User.Read</code> → clique em <b>Grant admin consent</b>.</li>
+      <li>Confirme que <code>CONFIG.fileUrl</code> é o link da planilha (já preenchido) e salve o arquivo.</li>
+    </ol>
+    <p style="margin-top:10px">Depois de salvar, recarregue a página e clique em <b>Entrar com Microsoft</b>. Nada é enviado para servidores externos — a leitura acontece no navegador.</p>
+    <p style="margin-top:6px;color:var(--muted)">Dúvidas de conta ou permissões da Dobro: <a href="https://support.claude.com" style="color:var(--sky)">support.claude.com</a> não cobre isso; fale com quem administra o Microsoft 365 da empresa.</p>
+  </div>`;
+}
+
+/* poll seg + botões */
+el('pollSeg').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+  el('pollSeg').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); POLL_MS = parseInt(b.dataset.ms,10); startPolling();
+  el('liveText').textContent = POLL_MS>0 ? 'Conectado' : 'Modo manual';
+}));
+el('refBtn').addEventListener('click', ()=>refresh(true));
+el('loginBtn').addEventListener('click', doLogin);
+el('logoutBtn').addEventListener('click', ()=>{
+  if(pollTimer) clearInterval(pollTimer);
+  if(msalApp && account){ try{ msalApp.logoutPopup({ account }); }catch(e){} }
+  location.reload();
+});
+
+/* boot: se não configurado, mostra instruções no botão; se configurado, tenta silent SSO */
+(async function boot(){
+  if(!isConfigured()){
+    // deixa a tela de login visível; ao clicar mostra setup
+    return;
+  }
+  try{
+    msalApp = buildMsal();
+    const resp = await msalApp.handleRedirectPromise();
+    const accts = msalApp.getAllAccounts();
+    if(accts.length){ account = accts[0]; msalApp.setActiveAccount(account); await afterLogin(); }
+  }catch(e){ console.warn('SSO silencioso indisponível', e); }
+})();
+</script>
+</body>
+</html>
