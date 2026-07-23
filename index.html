@@ -372,19 +372,19 @@ function rowKey(o, headers){
 /* ---------- filtros (estado global) ---------- */
 let FILTER = { ini:'', fim:'', deg:'__all__' };
 
-/* converte número de série do Excel (dias desde 1899-12-30) em Date */
+/* converte número de série do Excel (dias desde 1899-12-30) em Date (meio-dia local) */
 function excelToDate(n){
   if(n==null || n==='') return null;
   const num = typeof n === 'number' ? n : parseFloat(String(n).replace(',','.'));
   if(!isFinite(num)) {
-    // talvez já seja uma string de data
     const d = new Date(n);
     return isNaN(d) ? null : d;
   }
-  // Excel: dia 1 = 1900-01-01; base corrigida usa 1899-12-30
-  const ms = Math.round((num - 25569) * 86400 * 1000); // 25569 = dias entre 1899-12-30 e 1970-01-01
-  const d = new Date(ms);
-  return isNaN(d) ? null : d;
+  // parte inteira = dia; base Excel 1899-12-30. Constrói data local ao meio-dia.
+  const days = Math.floor(num);
+  const base = new Date(1899, 11, 30, 12, 0, 0); // 30/12/1899 meio-dia, horário local
+  base.setDate(base.getDate() + days);
+  return isNaN(base) ? null : base;
 }
 function fmtDate(d){
   if(!d) return '—';
@@ -442,12 +442,14 @@ function render(data){
   if(!FILTER.ini && minD) FILTER.ini = toISO(minD);
   if(!FILTER.fim && maxD) FILTER.fim = toISO(maxD);
 
-  // aplica filtros
-  const iniD = FILTER.ini ? new Date(FILTER.ini+'T00:00:00') : null;
-  const fimD = FILTER.fim ? new Date(FILTER.fim+'T23:59:59') : null;
+  // aplica filtros — compara por dia-calendário (número YYYYMMDD) p/ evitar fuso
+  const dayNum = d => d ? d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate() : null;
+  const iniN = FILTER.ini ? Number(FILTER.ini.replace(/-/g,'')) : null;
+  const fimN = FILTER.fim ? Number(FILTER.fim.replace(/-/g,'')) : null;
   const filtered = rows.filter(r=>{
-    if(iniD && (!r.__date || r.__date < iniD)) return false;
-    if(fimD && (!r.__date || r.__date > fimD)) return false;
+    const dn = dayNum(r.__date);
+    if(iniN && (dn==null || dn < iniN)) return false;
+    if(fimN && (dn==null || dn > fimN)) return false;
     if(FILTER.deg!=='__all__' && r.__deg !== FILTER.deg) return false;
     return true;
   });
@@ -464,8 +466,8 @@ function render(data){
   const degOpts = ['<option value="__all__">Todas as degustadoras</option>']
     .concat(degs.map(d=>`<option value="${esc(d)}"${FILTER.deg===d?' selected':''}>${esc(d)}</option>`)).join('');
   const filterBar = `<div class="card filters"><div class="fgrid">
-    <div class="fld"><label>De</label><input type="date" id="fIni" value="${FILTER.ini}" min="${minD?toISO(minD):''}" max="${maxD?toISO(maxD):''}"></div>
-    <div class="fld"><label>Até</label><input type="date" id="fFim" value="${FILTER.fim}" min="${minD?toISO(minD):''}" max="${maxD?toISO(maxD):''}"></div>
+    <div class="fld"><label>De</label><input type="date" id="fIni" value="${FILTER.ini}"></div>
+    <div class="fld"><label>Até</label><input type="date" id="fFim" value="${FILTER.fim}"></div>
     ${col.deg?`<div class="fld"><label>Degustadora</label><select id="fDeg">${degOpts}</select></div>`:''}
     <div class="fld"><label>&nbsp;</label><button class="fclear" id="fClear">Limpar período</button></div>
     <div class="fld ftag"><label>&nbsp;</label><span>${total} degustaç${total===1?'ão':'ões'} no período${FILTER.deg!=='__all__'?' · '+esc(FILTER.deg):''}</span></div>
