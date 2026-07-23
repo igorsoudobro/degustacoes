@@ -92,6 +92,15 @@ input,select{font-family:inherit}
 .ftag{margin-left:auto}
 .ftag span{display:inline-block;background:var(--navy);color:#fff;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600}
 
+/* PENDÊNCIAS */
+.pendbar{display:flex;align-items:center;gap:10px;background:#FDF6E0;border:1px solid #F0E4B0;border-left:4px solid var(--warn);color:#8A6D14;padding:12px 16px;border-radius:10px;margin-bottom:18px;font-size:13.5px;line-height:1.5}
+.pendbar .pico{flex:none;width:22px;height:22px;border-radius:50%;background:var(--warn);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.kpi.pend{border-left-color:var(--warn)} .kpi.pend .val{color:var(--warn)}
+tbody tr.pend-row{background:#FEFBEE}
+tbody tr.pend-row:hover{background:#FCF6DC}
+td.cell-pend{background:var(--yellow)!important;color:#6B5B00;font-weight:700;text-align:center;border-radius:4px}
+tbody tr.pend-row.new-row{animation:flashin 2.4s ease-out}
+
 /* CARDS/TABLES */
 .card{background:#fff;border-radius:12px;box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
 .card-h{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
@@ -454,11 +463,23 @@ function render(data){
     return true;
   });
 
-  // ----- métricas do período -----
+  // ----- pendências: falta preço OU degustadora -----
+  const isEmpty = v => v==null || String(v).trim()==='';
+  filtered.forEach(r=>{
+    r.__semPreco = col.preco ? isEmpty(r[col.preco]) : false;
+    r.__semDeg   = col.deg   ? isEmpty(r[col.deg])   : false;
+    r.__pendente = r.__semPreco || r.__semDeg;
+  });
+  const completas = filtered.filter(r=>!r.__pendente);
+  const pendentes = filtered.filter(r=>r.__pendente);
+
+  // ----- métricas do período (SOMENTE degustações completas) -----
   const total = filtered.length;
-  const somaProvaram = filtered.reduce((s,r)=> s + (col.provaram?num(r[col.provaram]):0), 0);
-  const somaCarrinho = filtered.reduce((s,r)=> s + (col.carrinho?num(r[col.carrinho]):0), 0);
-  const somaPreco    = filtered.reduce((s,r)=> s + (col.preco?num(r[col.preco]):0), 0);
+  const nCompletas = completas.length;
+  const nPendentes = pendentes.length;
+  const somaProvaram = completas.reduce((s,r)=> s + (col.provaram?num(r[col.provaram]):0), 0);
+  const somaCarrinho = completas.reduce((s,r)=> s + (col.carrinho?num(r[col.carrinho]):0), 0);
+  const somaPreco    = completas.reduce((s,r)=> s + (col.preco?num(r[col.preco]):0), 0);
   const CPE = somaPreco>0 ? somaProvaram/somaPreco : null;      // pessoas que provaram por R$1
   const CAQ = somaCarrinho>0 ? somaProvaram/somaCarrinho : null; // provaram por carrinho
 
@@ -473,20 +494,26 @@ function render(data){
     <div class="fld ftag"><label>&nbsp;</label><span>${total} degustaç${total===1?'ão':'ões'} no período${FILTER.deg!=='__all__'?' · '+esc(FILTER.deg):''}</span></div>
   </div></div>`;
 
+  // ----- banner de pendências -----
+  const pendBanner = nPendentes>0
+    ? `<div class="pendbar"><span class="pico">!</span><b>${nPendentes} degustaç${nPendentes===1?'ão':'ões'} pendente${nPendentes===1?'':'s'}</b> — falta preço e/ou degustadora. Complete na planilha. ${nPendentes===1?'Ela não entra':'Elas não entram'} nas métricas até ser preenchida${nPendentes===1?'':'s'}.</div>`
+    : '';
+
   // ----- KPIs -----
   const kpis = `
-    <div class="kpi accent"><div class="lab">Degustações</div><div class="val">${total}</div><div class="sub">no período</div></div>
-    <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">soma dos preços</div></div>
-    <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">soma no período</div></div>
-    <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">soma no período</div></div>
+    <div class="kpi accent"><div class="lab">Degustações</div><div class="val">${total}</div><div class="sub">${nCompletas} completa${nCompletas===1?'':'s'}${nPendentes>0?` · ${nPendentes} pendente${nPendentes===1?'':'s'}`:''}</div></div>
+    <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">só completas</div></div>
+    <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">só completas</div></div>
+    <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">só completas</div></div>
     <div class="kpi sens"><div class="lab">CPE · provas por R$</div><div class="val">${CPE!=null?fmtNumBR(CPE,2):'—'}</div><div class="sub">provaram ÷ valor gasto</div></div>
-    <div class="kpi sens"><div class="lab">CAQ · provas por carrinho</div><div class="val">${CAQ!=null?fmtNumBR(CAQ,2):'—'}</div><div class="sub">provaram ÷ carrinho</div></div>`;
+    <div class="kpi sens"><div class="lab">CAQ · provas por carrinho</div><div class="val">${CAQ!=null?fmtNumBR(CAQ,2):'—'}</div><div class="sub">provaram ÷ carrinho</div></div>
+    ${nPendentes>0?`<div class="kpi pend"><div class="lab">Pendentes</div><div class="val">${nPendentes}</div><div class="sub">completar na planilha</div></div>`:''}`;
 
   // ----- gasto por degustadora (no período) -----
   let degCard = '';
   if(col.deg){
     const map = {};
-    filtered.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].n++; });
+    completas.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].n++; });
     const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
     const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
     degCard = `<div class="card"><div class="card-h"><h3>Gasto por degustadora</h3><span class="hint">no período selecionado</span></div>
@@ -500,19 +527,31 @@ function render(data){
   const ordered = [...filtered].sort((a,b)=> (b.__date?+b.__date:0)-(a.__date?+a.__date:0));
   const tableRows = ordered.map(r=>{
     const isNew = novos.has(rowKey(r,headers));
-    return `<tr class="${isNew?'new-row':''}">${showCols.map(h=>{
+    const cls = [isNew?'new-row':'', r.__pendente?'pend-row':''].filter(Boolean).join(' ');
+    const cells = showCols.map(h=>{
       let val = r[h];
+      let tdcls = '';
       if(h===col.data) val = fmtDate(r.__date);
-      else if(h===col.preco) val = r[col.preco]!=null&&r[col.preco]!==''?fmtBRL(num(r[col.preco])):'—';
-      return `<td>${esc(val)}</td>`;
-    }).join('')}</tr>`;
+      else if(h===col.preco){
+        if(r.__semPreco){ val = 'Completar'; tdcls = 'cell-pend'; }
+        else val = fmtBRL(num(r[col.preco]));
+      }
+      else if(h===col.deg){
+        if(r.__semDeg){ val = 'Completar'; tdcls = 'cell-pend'; }
+      }
+      return `<td class="${tdcls}">${esc(val)}</td>`;
+    }).join('');
+    const statusCell = `<td>${r.__pendente
+      ? `<span class="pill r">⚠ Completar na planilha</span>`
+      : `<span class="pill g">Completa</span>`}</td>`;
+    return `<tr class="${cls}">${cells}${statusCell}</tr>`;
   }).join('');
   const headLabels = { [col.data]:'Data da degustação', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
   const fullTable = `<div class="card"><div class="card-h"><h3>Degustações do período</h3><span class="hint">${total} registros · mais recentes no topo</span></div>
-    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}</tr></thead>
-    <tbody>${tableRows||`<tr><td colspan="${showCols.length}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
+    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>Status</th></tr></thead>
+    <tbody>${tableRows||`<tr><td colspan="${showCols.length+1}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  c.innerHTML = filterBar + `<div class="kpirow">${kpis}</div>` + degCard + fullTable;
+  c.innerHTML = filterBar + pendBanner + `<div class="kpirow">${kpis}</div>` + degCard + fullTable;
 
   // ----- liga eventos dos filtros -----
   const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear');
