@@ -80,6 +80,18 @@ input,select{font-family:inherit}
 .kpi.pos{border-left-color:var(--pos)} .kpi.pos .val{color:var(--pos)}
 .kpi.sens{border-left-color:var(--warn)}
 
+/* FILTROS */
+.filters{padding:14px 18px}
+.fgrid{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+.fld input,.fld select{border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;color:var(--ink);background:#fff;min-width:150px}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--sky)}
+.fclear{border:1px solid var(--line);background:var(--grey);color:var(--navy);border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600}
+.fclear:hover{background:#E4E8F4}
+.ftag{margin-left:auto}
+.ftag span{display:inline-block;background:var(--navy);color:#fff;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600}
+
 /* CARDS/TABLES */
 .card{background:#fff;border-radius:12px;box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
 .card-h{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
@@ -357,86 +369,155 @@ function rowKey(o, headers){
   return headers.map(h => String(o[h]==null?'':o[h])).join('¦');
 }
 
+/* ---------- filtros (estado global) ---------- */
+let FILTER = { ini:'', fim:'', deg:'__all__' };
+
+/* converte número de série do Excel (dias desde 1899-12-30) em Date */
+function excelToDate(n){
+  if(n==null || n==='') return null;
+  const num = typeof n === 'number' ? n : parseFloat(String(n).replace(',','.'));
+  if(!isFinite(num)) {
+    // talvez já seja uma string de data
+    const d = new Date(n);
+    return isNaN(d) ? null : d;
+  }
+  // Excel: dia 1 = 1900-01-01; base corrigida usa 1899-12-30
+  const ms = Math.round((num - 25569) * 86400 * 1000); // 25569 = dias entre 1899-12-30 e 1970-01-01
+  const d = new Date(ms);
+  return isNaN(d) ? null : d;
+}
+function fmtDate(d){
+  if(!d) return '—';
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+function toISO(d){ return d ? d.toISOString().slice(0,10) : ''; }
+function num(v){ const n = typeof v==='number'?v:parseFloat(String(v==null?'':v).replace(/[^\d,.-]/g,'').replace(',','.')); return isFinite(n)?n:0; }
+function fmtBRL(v){ return v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function fmtNumBR(v,dec){ return v.toLocaleString('pt-BR',{minimumFractionDigits:dec||0,maximumFractionDigits:dec||0}); }
+
+/* mapeia as colunas específicas da planilha de degustações */
+function mapCols(headers){
+  const find = (...alts) => headers.find(h => alts.some(a => h.toLowerCase().includes(a)));
+  return {
+    id:      find('id'),
+    inicio:  find('hora de início','hora de inicio','início','inicio'),
+    data:    find('data da degust','qual a data'),
+    email:   find('email','e-mail'),
+    nome:    find('nome'),
+    provaram:find('degustaram','quantas pessoas de','provaram'),
+    carrinho:find('carrinho','col'),
+    obs:     find('observ'),
+    preco:   find('preço','preco'),
+    deg:     find('degustadora','degustador')
+  };
+}
+
 function render(data){
   const { headers, rows } = data;
   const c = el('content');
-
   if(!headers.length){
-    c.innerHTML = `<div class="card"><div class="empty"><h4>Planilha vazia</h4>Nenhuma linha encontrada ainda. Assim que a primeira resposta do formulário chegar, ela aparece aqui.</div></div>`;
+    c.innerHTML = `<div class="card"><div class="empty"><h4>Planilha vazia</h4>Assim que a primeira resposta chegar, ela aparece aqui.</div></div>`;
     return;
   }
 
-  // detectar linhas novas comparando keysets
+  // novidades
   const keys = rows.map(r => rowKey(r, headers));
-  const newSet = new Set(keys);
-  const firstLoad = LAST_KEYSET.size === 0;
-  const novos = firstLoad ? new Set() : new Set(keys.filter(k => !LAST_KEYSET.has(k)));
-  LAST_KEYSET = newSet;
+  const novos = LAST_KEYSET.size===0 ? new Set() : new Set(keys.filter(k => !LAST_KEYSET.has(k)));
+  LAST_KEYSET = new Set(keys);
 
-  // heurística de colunas: tenta achar data, vendedor/responsável, cliente, produto, status
-  const findCol = (...alts) => headers.find(h => alts.some(a => h.toLowerCase().includes(a)));
-  const colData   = findCol('data','hora','carimbo','registro');
-  const colResp   = findCol('vendedor','responsáv','responsav','rca','consultor','representante');
-  const colCli    = findCol('cliente','razão','razao','cnpj','loja','estabelec');
-  const colProd   = findCol('produto','sku','item','sabor');
-  const colStatus = findCol('status','resultado','situa','feedback','aprov');
+  const col = mapCols(headers);
 
-  // KPIs
-  const total = rows.length;
-  const respostasHoje = colData ? rows.filter(r=>{
-    const v = String(r[colData]||''); const t=new Date();
-    const dd=String(t.getDate()).padStart(2,'0'), mm=String(t.getMonth()+1).padStart(2,'0'), yy=t.getFullYear();
-    return v.includes(dd+'/'+mm) || v.includes(yy+'-'+mm+'-'+dd);
-  }).length : null;
+  // anexa data convertida e degustadora normalizada a cada linha
+  rows.forEach(r=>{
+    r.__date = col.data ? excelToDate(r[col.data]) : null;
+    r.__deg  = col.deg ? String(r[col.deg]==null?'':r[col.deg]).trim() : '';
+  });
 
-  const respUnicos = colResp ? new Set(rows.map(r=>r[colResp]).filter(Boolean)).size : null;
-  const cliUnicos  = colCli ? new Set(rows.map(r=>r[colCli]).filter(Boolean)).size : null;
+  // lista de degustadoras para o dropdown
+  const degs = col.deg ? [...new Set(rows.map(r=>r.__deg).filter(Boolean))].sort() : [];
 
-  let kpis = `<div class="kpi accent"><div class="lab">Total de degustações</div><div class="val">${total}</div><div class="sub">respostas registradas</div></div>`;
-  if(respostasHoje!=null) kpis += `<div class="kpi pos"><div class="lab">Registradas hoje</div><div class="val">${respostasHoje}</div><div class="sub">${new Date().toLocaleDateString('pt-BR')}</div></div>`;
-  if(respUnicos!=null) kpis += `<div class="kpi"><div class="lab">${esc(colResp)}</div><div class="val">${respUnicos}</div><div class="sub">distintos</div></div>`;
-  if(cliUnicos!=null) kpis += `<div class="kpi"><div class="lab">Clientes</div><div class="val">${cliUnicos}</div><div class="sub">distintos</div></div>`;
+  // range de datas disponível (para default e limites)
+  const validDates = rows.map(r=>r.__date).filter(Boolean).sort((a,b)=>a-b);
+  const minD = validDates[0] || null, maxD = validDates[validDates.length-1] || null;
+  if(!FILTER.ini && minD) FILTER.ini = toISO(minD);
+  if(!FILTER.fim && maxD) FILTER.fim = toISO(maxD);
 
-  // Ranking por responsável (barras)
-  let rankCard = '';
-  if(colResp){
-    const map = {}; rows.forEach(r=>{ const k=String(r[colResp]||'—').trim()||'—'; map[k]=(map[k]||0)+1; });
-    const arr = Object.entries(map).sort((a,b)=>b[1]-a[1]);
-    const max = arr.length?arr[0][1]:1;
-    rankCard = `<div class="card"><div class="card-h"><h3>Degustações por ${esc(colResp.toLowerCase())}</h3><span class="hint">${arr.length} no total</span></div>
-      <div class="scroll"><table><thead><tr><th>${esc(colResp)}</th><th style="width:55%">Volume</th></tr></thead><tbody>
-      ${arr.map(([k,v])=>`<tr><td class="rowlab">${esc(k)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${(v/max*100).toFixed(1)}%"></div></div><span class="bar-num">${v}</span></div></td></tr>`).join('')}
+  // aplica filtros
+  const iniD = FILTER.ini ? new Date(FILTER.ini+'T00:00:00') : null;
+  const fimD = FILTER.fim ? new Date(FILTER.fim+'T23:59:59') : null;
+  const filtered = rows.filter(r=>{
+    if(iniD && (!r.__date || r.__date < iniD)) return false;
+    if(fimD && (!r.__date || r.__date > fimD)) return false;
+    if(FILTER.deg!=='__all__' && r.__deg !== FILTER.deg) return false;
+    return true;
+  });
+
+  // ----- métricas do período -----
+  const total = filtered.length;
+  const somaProvaram = filtered.reduce((s,r)=> s + (col.provaram?num(r[col.provaram]):0), 0);
+  const somaCarrinho = filtered.reduce((s,r)=> s + (col.carrinho?num(r[col.carrinho]):0), 0);
+  const somaPreco    = filtered.reduce((s,r)=> s + (col.preco?num(r[col.preco]):0), 0);
+  const CPE = somaPreco>0 ? somaProvaram/somaPreco : null;      // pessoas que provaram por R$1
+  const CAQ = somaCarrinho>0 ? somaProvaram/somaCarrinho : null; // provaram por carrinho
+
+  // ----- barra de filtros -----
+  const degOpts = ['<option value="__all__">Todas as degustadoras</option>']
+    .concat(degs.map(d=>`<option value="${esc(d)}"${FILTER.deg===d?' selected':''}>${esc(d)}</option>`)).join('');
+  const filterBar = `<div class="card filters"><div class="fgrid">
+    <div class="fld"><label>De</label><input type="date" id="fIni" value="${FILTER.ini}" min="${minD?toISO(minD):''}" max="${maxD?toISO(maxD):''}"></div>
+    <div class="fld"><label>Até</label><input type="date" id="fFim" value="${FILTER.fim}" min="${minD?toISO(minD):''}" max="${maxD?toISO(maxD):''}"></div>
+    ${col.deg?`<div class="fld"><label>Degustadora</label><select id="fDeg">${degOpts}</select></div>`:''}
+    <div class="fld"><label>&nbsp;</label><button class="fclear" id="fClear">Limpar período</button></div>
+    <div class="fld ftag"><label>&nbsp;</label><span>${total} degustaç${total===1?'ão':'ões'} no período${FILTER.deg!=='__all__'?' · '+esc(FILTER.deg):''}</span></div>
+  </div></div>`;
+
+  // ----- KPIs -----
+  const kpis = `
+    <div class="kpi accent"><div class="lab">Degustações</div><div class="val">${total}</div><div class="sub">no período</div></div>
+    <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">soma dos preços</div></div>
+    <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">soma no período</div></div>
+    <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">soma no período</div></div>
+    <div class="kpi sens"><div class="lab">CPE · provas por R$</div><div class="val">${CPE!=null?fmtNumBR(CPE,2):'—'}</div><div class="sub">provaram ÷ valor gasto</div></div>
+    <div class="kpi sens"><div class="lab">CAQ · provas por carrinho</div><div class="val">${CAQ!=null?fmtNumBR(CAQ,2):'—'}</div><div class="sub">provaram ÷ carrinho</div></div>`;
+
+  // ----- gasto por degustadora (no período) -----
+  let degCard = '';
+  if(col.deg){
+    const map = {};
+    filtered.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].n++; });
+    const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
+    const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
+    degCard = `<div class="card"><div class="card-h"><h3>Gasto por degustadora</h3><span class="hint">no período selecionado</span></div>
+      <div class="scroll"><table><thead><tr><th>Degustadora</th><th>Degustações</th><th>Provaram</th><th style="width:38%">Valor gasto</th></tr></thead><tbody>
+      ${arr.length?arr.map(([k,v])=>`<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${max>0?(v.preco/max*100).toFixed(1):0}%"></div></div><span class="bar-num">${fmtBRL(v.preco)}</span></div></td></tr>`).join(''):`<tr><td colspan="4" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
   }
 
-  // Status (pills)
-  let statusCard = '';
-  if(colStatus){
-    const map = {}; rows.forEach(r=>{ const k=String(r[colStatus]||'—').trim()||'—'; map[k]=(map[k]||0)+1; });
-    const arr = Object.entries(map).sort((a,b)=>b[1]-a[1]);
-    const cls = k => { const s=k.toLowerCase(); if(/aprov|posit|sim|convert|fechad/.test(s))return'g'; if(/pend|aguard|talvez|avali/.test(s))return'y'; if(/reprov|negat|não|nao|recus|perd/.test(s))return'r'; return'n'; };
-    statusCard = `<div class="card"><div class="card-h"><h3>${esc(colStatus)}</h3></div>
-      <div class="scroll"><table><thead><tr><th>${esc(colStatus)}</th><th>Qtd.</th></tr></thead><tbody>
-      ${arr.map(([k,v])=>`<tr><td><span class="pill ${cls(k)}">${esc(k)}</span></td><td class="rowlab">${v}</td></tr>`).join('')}
-      </tbody></table></div></div>`;
-  }
-
-  // Tabela completa (mais recentes primeiro)
-  const ordered = [...rows].reverse();
-  const showCols = headers.slice(0, 8); // limita largura; scroll horizontal cobre o resto
+  // ----- tabela do período (datas convertidas) -----
+  const showCols = [col.id,col.data,col.deg,col.provaram,col.carrinho,col.preco,col.obs].filter(Boolean);
+  const ordered = [...filtered].sort((a,b)=> (b.__date?+b.__date:0)-(a.__date?+a.__date:0));
   const tableRows = ordered.map(r=>{
-    const k = rowKey(r, headers);
-    const isNew = novos.has(k);
-    return `<tr class="${isNew?'new-row':''}">${showCols.map(h=>`<td>${esc(r[h])}</td>`).join('')}</tr>`;
+    const isNew = novos.has(rowKey(r,headers));
+    return `<tr class="${isNew?'new-row':''}">${showCols.map(h=>{
+      let val = r[h];
+      if(h===col.data) val = fmtDate(r.__date);
+      else if(h===col.preco) val = r[col.preco]!=null&&r[col.preco]!==''?fmtBRL(num(r[col.preco])):'—';
+      return `<td>${esc(val)}</td>`;
+    }).join('')}</tr>`;
   }).join('');
+  const headLabels = { [col.data]:'Data da degustação', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
+  const fullTable = `<div class="card"><div class="card-h"><h3>Degustações do período</h3><span class="hint">${total} registros · mais recentes no topo</span></div>
+    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}</tr></thead>
+    <tbody>${tableRows||`<tr><td colspan="${showCols.length}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  const fullTable = `<div class="card"><div class="card-h"><h3>Todas as respostas</h3><span class="hint">${total} registros · mais recentes no topo${headers.length>showCols.length?' · role para ver todas as colunas →':''}</span></div>
-    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
-    <tbody>${tableRows || `<tr><td colspan="${showCols.length}" class="empty">Sem respostas ainda.</td></tr>`}</tbody></table></div></div>`;
+  c.innerHTML = filterBar + `<div class="kpirow">${kpis}</div>` + degCard + fullTable;
 
-  const twoUp = (rankCard||statusCard) ? `<div class="grid2">${rankCard}${statusCard}</div>` : '';
-
-  c.innerHTML = `<div class="kpirow">${kpis}</div>${twoUp}${fullTable}`;
+  // ----- liga eventos dos filtros -----
+  const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear');
+  if(reIni) reIni.onchange = e=>{ FILTER.ini=e.target.value; render({headers,rows}); };
+  if(reFim) reFim.onchange = e=>{ FILTER.fim=e.target.value; render({headers,rows}); };
+  if(reDeg) reDeg.onchange = e=>{ FILTER.deg=e.target.value; render({headers,rows}); };
+  if(reClr) reClr.onclick  = ()=>{ FILTER.ini=minD?toISO(minD):''; FILTER.fim=maxD?toISO(maxD):''; FILTER.deg='__all__'; render({headers,rows}); };
 }
 
 /* ---------- fluxo de atualização ---------- */
