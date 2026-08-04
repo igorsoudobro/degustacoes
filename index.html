@@ -190,9 +190,12 @@ const CONFIG = {
   //    ex.: "soudobro.onmicrosoft.com" ou o GUID do diretório.
   tenant: "organizations",
 
-  // 3) Link COMPLETO da planilha (o mesmo que você copiou do navegador).
-  //    O sourcedoc e o nome do arquivo são extraídos daqui automaticamente.
-  fileUrl: "https://soudobro-my.sharepoint.com/:x:/r/personal/igor_supino_soudobro_com_br/_layouts/15/Doc.aspx?sourcedoc=%7BE21364AF-0C93-47B0-AFF5-7EC1CACA01E3%7D&file=Controle%20de%20Degusta%C3%A7%C3%B5es.xlsx&action=edit&mobileredirect=true",
+  // 3) Link de compartilhamento COMPLETO da planilha (o mesmo que você copia
+  //    pelo botão "Copiar link" no OneDrive/SharePoint). Funciona tanto para
+  //    um arquivo no seu OneDrive pessoal quanto para um arquivo dentro de um
+  //    site do SharePoint compartilhado — a resolução usa a Shares API do
+  //    Microsoft Graph, que aceita qualquer link de compartilhamento válido.
+  fileUrl: "https://soudobro.sharepoint.com/:x:/s/DOBROBI/IQCLJwamSt6WSaVqG5ysPT7cAVW0dHdWUI7gjq0RweDktEU?e=faeoTn",
 
   // Nome da planilha/aba a ler. Se o Forms grava numa aba específica,
   // coloque aqui (ex.: "Respostas ao Formulário 1"). Vazio = primeira usada.
@@ -217,22 +220,6 @@ function fmtNow(d){
   return d.toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'2-digit'});
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-/* Extrai sourcedoc (GUID) e nome do arquivo a partir do link do SharePoint */
-function parseFileUrl(url){
-  try{
-    const u = new URL(url);
-    let doc = u.searchParams.get("sourcedoc") || "";
-    doc = decodeURIComponent(doc).replace(/[{}]/g,"");
-    let file = u.searchParams.get("file") || "";
-    file = decodeURIComponent(file);
-    // host + caminho pessoal, para montar chamadas de drive quando necessário
-    const host = u.host;
-    const m = u.pathname.match(/\/personal\/([^\/]+)\//i);
-    const userPath = m ? m[1] : "";
-    return { doc, file, host, userPath };
-  }catch(e){ return { doc:"", file:"", host:"", userPath:"" }; }
-}
 
 /* ---------- MSAL ---------- */
 function buildMsal(){
@@ -273,72 +260,41 @@ async function graph(path){
   return res.json();
 }
 
-/* Resolve driveId + itemId a partir do sourcedoc.
-   Estratégia: buscar o item no OneDrive/SharePoint do usuário dono do link. */
+/* Codifica uma URL de compartilhamento no formato exigido pela Shares API do
+   Microsoft Graph: "u!" + base64url (sem padding) da URL completa. Esse formato
+   funciona para qualquer link de compartilhamento válido — OneDrive pessoal OU
+   biblioteca de um site do SharePoint — sem precisar adivinhar caminhos, donos
+   ou nomes de biblioteca. Referência: Graph "Access shared items via URL". */
+function encodeSharingUrl(url){
+  const bytes = new TextEncoder().encode(url);
+  let binary = "";
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  const base64 = btoa(binary);
+  const base64url = base64.replace(/=+$/,"").replace(/\//g,"_").replace(/\+/g,"-");
+  return "u!" + base64url;
+}
+
+/* Resolve driveId + itemId diretamente a partir do link configurado em
+   CONFIG.fileUrl, via Shares API do Graph. Funciona igual para um arquivo no
+   OneDrive pessoal ou num site do SharePoint compartilhado — o que importa é
+   se a conta logada tem permissão de acesso a esse link. */
 async function resolveItem(){
-  const p = parseFileUrl(CONFIG.fileUrl);
-  if(!p.doc) throw new Error("Não consegui extrair o sourcedoc do link. Verifique CONFIG.fileUrl.");
-
-  // 1) Descobrir o drive pessoal do dono do arquivo, se o link for /personal/...
-  //    Tentamos primeiro pelo próprio usuário logado (caso seja o dono).
-  //    Depois pelo site pessoal do dono via /users/{upn}/drive.
-  const candidates = [];
-
-  // dono derivado do path: igor_supino_soudobro_com_br -> igor.supino@soudobro.com.br
-  if(p.userPath){
-    const upn = p.userPath
-      .replace(/_([a-z]{2,4})$/i, '.$1')          // ..._br -> ....br (aprox)
-      .replace(/_/g, m => m);                       // mantém, tratamos abaixo
-    // Reconstrução robusta: troca underscores por . e o último grupo vira domínio
-    const parts = p.userPath.split('_');
-    // heurística comum SharePoint: nome_sobrenome_dominio_com_br
-    // -> nome.sobrenome@dominio.com.br
-    let email = "";
-    if(parts.length >= 4){
-      const domainParts = parts.slice(-3); // com_br etc — varia
-      // tenta achar onde começa o domínio (primeiro segmento que costuma ser empresa)
-    }
-    candidates.push({ kind:"ownerDrive", userKey: p.userPath });
+  if(!CONFIG.fileUrl) throw new Error("CONFIG.fileUrl não está preenchido.");
+  const shareId = encodeSharingUrl(CONFIG.fileUrl);
+  let item;
+  try{
+    item = await graph("/shares/" + shareId + "/driveItem?$select=id,name,parentReference");
+  }catch(e){
+    const err = new Error("Não consegui resolver o link do arquivo via Graph (Shares API). " +
+      "Confira se o link em CONFIG.fileUrl ainda é válido e se sua conta tem acesso a ele.");
+    err.cause = e;
+    throw err;
   }
-
-  // 2) Caminho principal: buscar o arquivo pelo NOME no drive do usuário.
-  //    Mais robusto que o sourcedoc, que nem sempre casa com o driveItem id.
-  const fileName = p.file || "Controle de Degustações.xlsx";
-  const nameNoExt = fileName.replace(/\.[^.]+$/, "");
-  const searchTerm = "Controle de Degusta"; // prefixo tolerante a acento/singular-plural
-
-  const tries = [
-    // a) busca por termo no OneDrive do usuário logado
-    async () => {
-      const r = await graph("/me/drive/root/search(q='" + encodeURIComponent(searchTerm) + "')?$select=id,name,parentReference,file");
-      const hit = (r.value||[]).find(x => x.file && /\.xlsx?$/i.test(x.name));
-      if(!hit) throw new Error("busca sem resultado");
-      return { item: hit, driveId: hit.parentReference && hit.parentReference.driveId };
-    },
-    // b) caminho direto pelo nome exato na raiz
-    async () => { const d = await graph("/me/drive/root:/" + encodeURIComponent(fileName) + ":?$select=id,name,parentReference"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; },
-    // c) fallback: tentar o sourcedoc como id do item
-    async () => { const d = await graph("/me/drive/items/" + p.doc + "?$select=id,name,parentReference"); return { item:d, driveId:d.parentReference && d.parentReference.driveId }; }
-  ];
-
-  let lastErr = null;
-  for(const t of tries){
-    try{
-      const r = await t();
-      if(r.item && r.item.id){
-        itemId = r.item.id;
-        driveId = r.driveId || (r.item.parentReference && r.item.parentReference.driveId);
-        if(!driveId){ const me = await graph("/me/drive"); driveId = me.id; }
-        resolved = true;
-        return;
-      }
-    }catch(e){ lastErr = e; }
-  }
-  const e = new Error("Não localizei o arquivo no seu OneDrive/SharePoint. " +
-    "Se a planilha for de OUTRA pessoa, ela precisa compartilhar com você, " +
-    "ou informe manualmente o driveId/itemId (veja instruções).");
-  e.cause = lastErr;
-  throw e;
+  if(!item || !item.id) throw new Error("O link em CONFIG.fileUrl não retornou um arquivo válido.");
+  itemId = item.id;
+  driveId = item.parentReference && item.parentReference.driveId;
+  if(!driveId) throw new Error("Não consegui identificar o drive do arquivo a partir do link.");
+  resolved = true;
 }
 
 /* Lê o conteúdo usado (usedRange) da worksheet via Graph Workbook API */
