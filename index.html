@@ -480,8 +480,8 @@ function render(data){
   const somaProvaram = completas.reduce((s,r)=> s + (col.provaram?num(r[col.provaram]):0), 0);
   const somaCarrinho = completas.reduce((s,r)=> s + (col.carrinho?num(r[col.carrinho]):0), 0);
   const somaPreco    = completas.reduce((s,r)=> s + (col.preco?num(r[col.preco]):0), 0);
-  const CPE = somaPreco>0 ? somaProvaram/somaPreco : null;      // pessoas que provaram por R$1
-  const CAQ = somaCarrinho>0 ? somaProvaram/somaCarrinho : null; // provaram por carrinho
+  const CPE = somaProvaram>0 ? somaPreco/somaProvaram : null;   // custo por experimentação: R$ gastos por pessoa que provou
+  const CAQ = somaCarrinho>0 ? somaPreco/somaCarrinho : null;   // custo por aquisição: R$ gastos por item no carrinho
 
   // ----- barra de filtros -----
   const degOpts = ['<option value="__all__">Todas as degustadoras</option>']
@@ -505,8 +505,8 @@ function render(data){
     <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">só completas</div></div>
     <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">só completas</div></div>
     <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">só completas</div></div>
-    <div class="kpi sens"><div class="lab">CPE · provas por R$</div><div class="val">${CPE!=null?fmtNumBR(CPE,2):'—'}</div><div class="sub">provaram ÷ valor gasto</div></div>
-    <div class="kpi sens"><div class="lab">CAQ · provas por carrinho</div><div class="val">${CAQ!=null?fmtNumBR(CAQ,2):'—'}</div><div class="sub">provaram ÷ carrinho</div></div>
+    <div class="kpi sens"><div class="lab">CPE · custo por experimentação</div><div class="val">${CPE!=null?fmtBRL(CPE):'—'}</div><div class="sub">valor gasto ÷ provaram</div></div>
+    <div class="kpi sens"><div class="lab">CAQ · custo por aquisição</div><div class="val">${CAQ!=null?fmtBRL(CAQ):'—'}</div><div class="sub">valor gasto ÷ carrinho</div></div>
     ${nPendentes>0?`<div class="kpi pend"><div class="lab">Pendentes</div><div class="val">${nPendentes}</div><div class="sub">completar na planilha</div></div>`:''}`;
 
   // ----- gasto por degustadora (no período) -----
