@@ -99,6 +99,7 @@ input,select{font-family:inherit}
 tbody tr.pend-row{background:#FEFBEE}
 tbody tr.pend-row:hover{background:#FCF6DC}
 td.cell-pend{background:var(--yellow)!important;color:#6B5B00;font-weight:700;text-align:center;border-radius:4px}
+td.cell-muted{color:#9AA3AF;text-align:center}
 tbody tr.pend-row.new-row{animation:flashin 2.4s ease-out}
 
 /* CARDS/TABLES */
@@ -375,8 +376,9 @@ function mapCols(headers){
     provaram:find('degustaram','quantas pessoas de','provaram'),
     carrinho:find('carrinho','col'),
     obs:     find('observ'),
-    preco:   find('preço','preco'),
-    deg:     find('degustadora','degustador')
+    preco:   find('preço','preco','reais','valor'),
+    deg:     find('degustadora','degustador'),
+    loja:    find('loja')
   };
 }
 
@@ -482,7 +484,7 @@ function render(data){
   }
 
   // ----- tabela do período (datas convertidas) -----
-  const showCols = [col.id,col.data,col.deg,col.provaram,col.carrinho,col.preco,col.obs].filter(Boolean);
+  const showCols = [col.id,col.data,col.deg,col.loja,col.provaram,col.carrinho,col.preco,col.obs].filter(Boolean);
   const ordered = [...filtered].sort((a,b)=> (b.__date?+b.__date:0)-(a.__date?+a.__date:0));
   const tableRows = ordered.map(r=>{
     const isNew = novos.has(rowKey(r,headers));
@@ -498,6 +500,12 @@ function render(data){
       else if(h===col.deg){
         if(r.__semDeg){ val = 'Completar'; tdcls = 'cell-pend'; }
       }
+      else if(h===col.loja){
+        // coluna nova: registros antigos vêm em branco. Mostra "—" em vez de
+        // célula vazia, mas NÃO entra em __pendente (senão o histórico inteiro
+        // viraria "Completar" e sairia das métricas).
+        if(val==null || String(val).trim()===''){ val = '—'; tdcls = 'cell-muted'; }
+      }
       return `<td class="${tdcls}">${esc(val)}</td>`;
     }).join('');
     const statusCell = `<td>${r.__pendente
@@ -505,7 +513,7 @@ function render(data){
       : `<span class="pill g">Completa</span>`}</td>`;
     return `<tr class="${cls}">${cells}${statusCell}</tr>`;
   }).join('');
-  const headLabels = { [col.data]:'Data da degustação', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
+  const headLabels = { [col.data]:'Data da degustação', [col.deg]:'Degustadora', [col.loja]:'Loja', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
   const fullTable = `<div class="card"><div class="card-h"><h3>Degustações do período</h3><span class="hint">${total} registros · mais recentes no topo</span></div>
     <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>Status</th></tr></thead>
     <tbody>${tableRows||`<tr><td colspan="${showCols.length+1}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
