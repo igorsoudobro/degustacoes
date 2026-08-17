@@ -474,6 +474,29 @@ function render(data){
     return true;
   });
 
+  // ----- painel de diagnóstico temporário (só aparece com ?debug=1 na URL) -----
+  // Mostra, pra cada linha lida da planilha, o valor bruto da coluna de data,
+  // o tipo desse valor, a data que o painel entendeu, e se a linha entrou ou
+  // não no período selecionado — pra achar por que a contagem não bate.
+  let debugPanel = '';
+  if(new URLSearchParams(location.search).get('debug') === '1'){
+    const sample = rows.slice(0, 200).map(r=>{
+      const raw = col.data ? r[col.data] : undefined;
+      const dn = dayNum(r.__date);
+      const incluida = !(iniN && (dn==null || dn < iniN)) && !(fimN && (dn==null || dn > fimN));
+      return `<tr><td>${esc(r.__i)}</td><td>${esc(JSON.stringify(raw))}</td><td>${esc(typeof raw)}</td><td>${r.__date? esc(fmtDate(r.__date)) : '<b style="color:var(--neg)">não reconhecida</b>'}</td><td>${esc(dn)}</td><td>${incluida?'<span class="pill g">sim</span>':'<span class="pill n">não</span>'}</td></tr>`;
+    }).join('');
+    debugPanel = `<div class="card"><div class="card-h"><h3>Diagnóstico (temporário — remova o ?debug=1 da URL pra esconder)</h3></div>
+      <div style="padding:12px 20px;font-size:12.5px;color:var(--muted);line-height:1.6">
+        Cabeçalhos encontrados na planilha: <code>${esc(JSON.stringify(headers))}</code><br>
+        Coluna de data detectada: <b>${esc(col.data||'(nenhuma — não achei nada parecido com "data da degust")')}</b> ·
+        Coluna de degustadora detectada: <b>${esc(col.deg||'(nenhuma)')}</b> ·
+        Total de linhas lidas da planilha: <b>${rows.length}</b> ·
+        Período atual: <b>${esc(FILTER.ini)} a ${esc(FILTER.fim)}</b>
+      </div>
+      <div class="scroll"><table><thead><tr><th>Linha</th><th>Valor bruto (coluna de data)</th><th>Tipo</th><th>Data interpretada</th><th>AAAAMMDD</th><th>Entrou no período?</th></tr></thead><tbody>${sample||'<tr><td colspan="6" class="empty">Sem linhas.</td></tr>'}</tbody></table></div></div>`;
+  }
+
   // ----- pendências: falta preço OU degustadora -----
   const isEmpty = v => v==null || String(v).trim()==='';
   filtered.forEach(r=>{
@@ -565,7 +588,7 @@ function render(data){
     <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>Status</th></tr></thead>
     <tbody>${tableRows||`<tr><td colspan="${showCols.length+1}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  c.innerHTML = filterBar + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + fullTable;
+  c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + fullTable;
 
   // ----- liga eventos dos filtros -----
   const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear');
