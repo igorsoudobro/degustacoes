@@ -517,6 +517,7 @@ function render(data){
   const somaPreco    = completas.reduce((s,r)=> s + (col.preco?num(r[col.preco]):0), 0);
   const CPE = somaProvaram>0 ? somaPreco/somaProvaram : null;   // custo por experimentação: R$ gastos por pessoa que provou
   const CAQ = somaCarrinho>0 ? somaPreco/somaCarrinho : null;   // custo por aquisição: R$ gastos por item no carrinho
+  const taxaConversao = somaProvaram>0 ? (somaCarrinho/somaProvaram*100) : null;   // taxa de conversão: % de quem comprou do que provou
 
   // ----- barra de filtros -----
   const degOpts = ['<option value="__all__">Todas as degustadoras</option>']
@@ -525,6 +526,7 @@ function render(data){
     <div class="fld"><label>De</label><input type="date" id="fIni" value="${FILTER.ini}"></div>
     <div class="fld"><label>Até</label><input type="date" id="fFim" value="${FILTER.fim}"></div>
     ${col.deg?`<div class="fld"><label>Degustadora</label><select id="fDeg">${degOpts}</select></div>`:''}
+    <div class="fld"><label>&nbsp;</label><button class="fclear" id="fApply">Aplicar filtro</button></div>
     <div class="fld"><label>&nbsp;</label><button class="fclear" id="fClear">Limpar período</button></div>
     <div class="fld ftag"><label>&nbsp;</label><span>${total} degustaç${total===1?'ão':'ões'} no período${FILTER.deg!=='__all__'?' · '+esc(FILTER.deg):''}</span></div>
   </div></div>`;
@@ -540,6 +542,7 @@ function render(data){
     <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">só completas</div></div>
     <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">só completas</div></div>
     <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">só completas</div></div>
+    <div class="kpi sens"><div class="lab">Taxa de conversão</div><div class="val">${taxaConversao!=null?taxaConversao.toFixed(1)+'%':'—'}</div><div class="sub">carrinho ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CPE · custo por experimentação</div><div class="val">${CPE!=null?fmtBRL(CPE):'—'}</div><div class="sub">valor gasto ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CAQ · custo por aquisição</div><div class="val">${CAQ!=null?fmtBRL(CAQ):'—'}</div><div class="sub">valor gasto ÷ carrinho</div></div>
     ${nPendentes>0?`<div class="kpi pend"><div class="lab">Pendentes</div><div class="val">${nPendentes}</div><div class="sub">completar na planilha</div></div>`:''}`;
@@ -592,11 +595,23 @@ function render(data){
   c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + fullTable;
 
   // ----- liga eventos dos filtros -----
-  const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear');
-  if(reIni) reIni.onchange = e=>{ FILTER.ini=e.target.value; render({headers,rows}); };
-  if(reFim) reFim.onchange = e=>{ FILTER.fim=e.target.value; render({headers,rows}); };
-  if(reDeg) reDeg.onchange = e=>{ FILTER.deg=e.target.value; render({headers,rows}); };
-  if(reClr) reClr.onclick  = ()=>{ FILTER.ini=minD?toISO(minD):''; FILTER.fim=maxD?toISO(maxD):''; FILTER.deg='__all__'; render({headers,rows}); };
+  const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear'), reApp=el('fApply');
+  const applyFilters = ()=>{ 
+    if(reIni) FILTER.ini = reIni.value; 
+    if(reFim) FILTER.fim = reFim.value; 
+    if(reDeg) FILTER.deg = reDeg.value;
+    render({headers,rows}); 
+  };
+  if(reApp) reApp.onclick = applyFilters;
+  if(reClr) reClr.onclick = ()=>{ 
+    FILTER.ini=minD?toISO(minD):''; 
+    FILTER.fim=maxD?toISO(maxD):''; 
+    FILTER.deg='__all__'; 
+    if(reIni) reIni.value = FILTER.ini;
+    if(reFim) reFim.value = FILTER.fim;
+    if(reDeg) reDeg.value = FILTER.deg;
+    render({headers,rows}); 
+  };
 }
 
 /* ---------- fluxo de atualização ---------- */
