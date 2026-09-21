@@ -457,11 +457,13 @@ function render(data){
   // lista de degustadoras para o dropdown
   const degs = col.deg ? [...new Set(rows.map(r=>r.__deg).filter(Boolean))].sort() : [];
 
-  // range de datas disponível (para default e limites)
+  // range de datas disponível (para limites); padrão: 1º do mês atual até hoje
   const validDates = rows.map(r=>r.__date).filter(Boolean).sort((a,b)=>a-b);
   const minD = validDates[0] || null, maxD = validDates[validDates.length-1] || null;
-  if(!FILTER.ini && minD) FILTER.ini = toISO(minD);
-  if(!FILTER.fim && maxD) FILTER.fim = toISO(maxD);
+  const hoje = new Date();
+  const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  if(!FILTER.ini) FILTER.ini = toISO(primeiroDiaMes);
+  if(!FILTER.fim) FILTER.fim = toISO(hoje);
 
   // aplica filtros — compara por dia-calendário (número YYYYMMDD) p/ evitar fuso
   const dayNum = d => d ? d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate() : null;
@@ -582,15 +584,30 @@ function render(data){
       }
       return `<td class="${tdcls}">${esc(val)}</td>`;
     }).join('');
+    
+    // CPE, CAQ, Taxa de Conversão por linha
+    const preco = col.preco ? num(r[col.preco]) : 0;
+    const provaram = col.provaram ? num(r[col.provaram]) : 0;
+    const carrinho = col.carrinho ? num(r[col.carrinho]) : 0;
+    const cpe = provaram > 0 ? preco / provaram : null;
+    const caq = carrinho > 0 ? preco / carrinho : null;
+    const taxa = provaram > 0 ? (carrinho / provaram * 100) : null;
+    
+    const metricsCells = `
+      <td>${cpe != null ? fmtBRL(cpe) : '—'}</td>
+      <td>${caq != null ? fmtBRL(caq) : '—'}</td>
+      <td>${taxa != null ? taxa.toFixed(1) + '%' : '—'}</td>
+    `;
+    
     const statusCell = `<td>${r.__pendente
       ? `<span class="pill r">⚠ Completar na planilha</span>`
       : `<span class="pill g">Completa</span>`}</td>`;
-    return `<tr class="${cls}">${cells}${statusCell}</tr>`;
+    return `<tr class="${cls}">${cells}${metricsCells}${statusCell}</tr>`;
   }).join('');
   const headLabels = { [col.data]:'Data da degustação', [col.loja]:'Loja', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
   const fullTable = `<div class="card"><div class="card-h"><h3>Degustações do período</h3><span class="hint">${total} registros · mais recentes no topo</span></div>
-    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>Status</th></tr></thead>
-    <tbody>${tableRows||`<tr><td colspan="${showCols.length+1}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
+    <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>CPE</th><th>CAQ</th><th>Conversão</th><th>Status</th></tr></thead>
+    <tbody>${tableRows||`<tr><td colspan="${showCols.length+4}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
   c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + fullTable;
 
