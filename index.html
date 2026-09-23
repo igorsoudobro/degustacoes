@@ -400,7 +400,8 @@ function mapCols(headers){
     carrinho:find('carrinho','col'),
     obs:     find('observ'),
     preco:   find('preço','preco'),
-    deg:     find('degustadora','degustador')
+    deg:     find('degustadora','degustador'),
+    vendedor:find('vendedor')
   };
 }
 
@@ -448,14 +449,16 @@ function render(data){
 
   const col = mapCols(headers);
 
-  // anexa data convertida e degustadora normalizada a cada linha
+  // anexa data convertida e degustadora + vendedor normalizados a cada linha
   rows.forEach(r=>{
     r.__date = col.data ? excelToDate(r[col.data]) : null;
     r.__deg  = col.deg ? String(r[col.deg]==null?'':r[col.deg]).trim() : '';
+    r.__vend = col.vendedor ? String(r[col.vendedor]==null?'':r[col.vendedor]).trim() : '';
   });
 
-  // lista de degustadoras para o dropdown
+  // lista de degustadoras e vendedores para os dropdowns
   const degs = col.deg ? [...new Set(rows.map(r=>r.__deg).filter(Boolean))].sort() : [];
+  const vends = col.vendedor ? [...new Set(rows.map(r=>r.__vend).filter(Boolean))].sort() : [];
 
   // range de datas disponível (para limites); padrão: 1º do mês atual até hoje
   const validDates = rows.map(r=>r.__date).filter(Boolean).sort((a,b)=>a-b);
@@ -556,17 +559,40 @@ function render(data){
   let degCard = '';
   if(col.deg){
     const map = {};
-    completas.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].n++; });
+    completas.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,carr:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].carr+=num(r[col.carrinho]); map[k].n++; });
     const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
     const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
-    degCard = `<div class="card"><div class="card-h"><h3>Gasto por degustadora</h3><span class="hint">no período selecionado</span></div>
-      <div class="scroll"><table><thead><tr><th>Degustadora</th><th>Degustações</th><th>Provaram</th><th style="width:38%">Valor gasto</th></tr></thead><tbody>
-      ${arr.length?arr.map(([k,v])=>`<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${max>0?(v.preco/max*100).toFixed(1):0}%"></div></div><span class="bar-num">${fmtBRL(v.preco)}</span></div></td></tr>`).join(''):`<tr><td colspan="4" class="empty">Sem dados no período.</td></tr>`}
+    degCard = `<div class="card"><div class="card-h"><h3>Análise por degustadora</h3><span class="hint">no período selecionado</span></div>
+      <div class="scroll"><table><thead><tr><th>Degustadora</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>CPE</th><th>CAQ</th><th>Conversão</th></tr></thead><tbody>
+      ${arr.length?arr.map(([k,v])=>{
+        const cpe = v.prov > 0 ? v.preco/v.prov : null;
+        const caq = v.carr > 0 ? v.preco/v.carr : null;
+        const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
+        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${max>0?(v.preco/max*100).toFixed(1):0}%"></div></div><span class="bar-num">${fmtBRL(v.preco)}</span></div></td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td></tr>`;
+      }).join(''):`<tr><td colspan="8" class="empty">Sem dados no período.</td></tr>`}
+      </tbody></table></div></div>`;
+  }
+
+  // ----- análise por vendedor (no período) -----
+  let vendCard = '';
+  if(col.vendedor){
+    const map = {};
+    completas.forEach(r=>{ const k=r.__vend||'—'; if(!map[k])map[k]={preco:0,prov:0,carr:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].carr+=num(r[col.carrinho]); map[k].n++; });
+    const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
+    const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
+    vendCard = `<div class="card"><div class="card-h"><h3>Análise por vendedor</h3><span class="hint">no período selecionado</span></div>
+      <div class="scroll"><table><thead><tr><th>Vendedor</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>CPE</th><th>CAQ</th><th>Conversão</th></tr></thead><tbody>
+      ${arr.length?arr.map(([k,v])=>{
+        const cpe = v.prov > 0 ? v.preco/v.prov : null;
+        const caq = v.carr > 0 ? v.preco/v.carr : null;
+        const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
+        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td><div class="bar-wrap"><div class="bar-track"><div class="bar-fill y" style="width:${max>0?(v.preco/max*100).toFixed(1):0}%"></div></div><span class="bar-num">${fmtBRL(v.preco)}</span></div></td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td></tr>`;
+      }).join(''):`<tr><td colspan="8" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
   }
 
   // ----- tabela do período (datas convertidas) -----
-  const showCols = [col.id,col.data,col.loja,col.deg,col.provaram,col.carrinho,col.preco,col.obs].filter(Boolean);
+  const showCols = [col.id,col.data,col.loja,col.deg,col.vendedor,col.provaram,col.carrinho,col.preco,col.obs].filter(Boolean);
   const ordered = [...filtered].sort((a,b)=> (b.__date?+b.__date:0)-(a.__date?+a.__date:0));
   const tableRows = ordered.map(r=>{
     const isNew = novos.has(rowKey(r,headers));
@@ -604,12 +630,12 @@ function render(data){
       : `<span class="pill g">Completa</span>`}</td>`;
     return `<tr class="${cls}">${cells}${metricsCells}${statusCell}</tr>`;
   }).join('');
-  const headLabels = { [col.data]:'Data da degustação', [col.loja]:'Loja', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
+  const headLabels = { [col.data]:'Data da degustação', [col.loja]:'Loja', [col.deg]:'Degustadora', [col.vendedor]:'Vendedor', [col.provaram]:'Provaram', [col.carrinho]:'Carrinho', [col.preco]:'Preço', [col.obs]:'Observação' };
   const fullTable = `<div class="card"><div class="card-h"><h3>Degustações do período</h3><span class="hint">${total} registros · mais recentes no topo</span></div>
     <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>CPE</th><th>CAQ</th><th>Conversão</th><th>Status</th></tr></thead>
     <tbody>${tableRows||`<tr><td colspan="${showCols.length+4}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + fullTable;
+  c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + vendCard + fullTable;
 
   // ----- liga eventos dos filtros -----
   const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear'), reApp=el('fApply');
