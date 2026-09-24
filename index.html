@@ -364,13 +364,19 @@ function rowsFromMatrix(m){
 }
 
 /* chave estável de uma linha para detectar novidades */
-/* calcula score em estrelas baseado em CPE, conversão e eficiência */
-function calcularScore(cpe, taxa, custoDeg, benchmarks){
-  if(!cpe || !taxa || !custoDeg) return 0;
+/* calcula score em estrelas: CPE, Nº Degs, Taxa, Custo/Deg com pesos iguais */
+function calcularScore(cpe, taxa, custoDeg, nDegs, benchmarks){
+  if(!cpe || !taxa || !custoDeg || !nDegs) return 0;
   
   // normaliza cada métrica em escala 0-1 (onde 1 é "perfeito")
   // CPE: quanto menor, melhor; inversamente proporcional
   const scoreCPE = Math.max(0, 1 - (cpe - benchmarks.cpeMin) / (benchmarks.cpeMax - benchmarks.cpeMin));
+  
+  // Número de degustações: 1-3 (poucas), 4-5 (ok), >5 (top)
+  let scoreDegs;
+  if(nDegs <= 3) scoreDegs = Math.min(0.6, nDegs / 5); // máx 0.6 (< 3 estrelas)
+  else if(nDegs <= 5) scoreDegs = 0.7 + (nDegs - 3) * 0.1; // 0.7-0.9 (ok)
+  else scoreDegs = Math.min(1, 0.9 + (nDegs - 5) * 0.05); // >= 0.9 (top)
   
   // Taxa de conversão: quanto maior, melhor; diretamente proporcional
   const scoreTaxa = Math.max(0, Math.min(1, (taxa - benchmarks.taxaMin) / (benchmarks.taxaMax - benchmarks.taxaMin)));
@@ -378,8 +384,8 @@ function calcularScore(cpe, taxa, custoDeg, benchmarks){
   // Custo por Deg: quanto menor, melhor; inversamente proporcional
   const scoreEfic = Math.max(0, 1 - (custoDeg - benchmarks.eficMin) / (benchmarks.eficMax - benchmarks.eficMin));
   
-  // Pondera: CPE 50%, Taxa 30%, Eficiência 20%
-  const scoreFinal = (scoreCPE * 0.5) + (scoreTaxa * 0.3) + (scoreEfic * 0.2);
+  // Pondera: CPE 33%, Nº Degs 33%, Taxa 20%, Eficiência 14%
+  const scoreFinal = (scoreCPE * 0.33) + (scoreDegs * 0.33) + (scoreTaxa * 0.2) + (scoreEfic * 0.14);
   
   // converte para 0-5 estrelas
   return Math.round(scoreFinal * 5 * 2) / 2; // arredonda para .0 ou .5
@@ -578,7 +584,7 @@ function render(data){
     : '';
 
   // ----- KPIs -----
-  const scoreGeral = calcularScore(CPE, taxaConversao, custoPorDegustacao, {
+  const scoreGeral = calcularScore(CPE, taxaConversao, custoPorDegustacao, nCompletas, {
     cpeMin: CPE, cpeMax: CPE || 1,
     taxaMin: taxaConversao||0, taxaMax: taxaConversao||1,
     eficMin: custoPorDegustacao, eficMax: custoPorDegustacao||1
@@ -592,7 +598,7 @@ function render(data){
     <div class="kpi sens"><div class="lab">Taxa de conversão</div><div class="val">${taxaConversao!=null?taxaConversao.toFixed(1)+'%':'—'}</div><div class="sub">carrinho ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CPE · custo por experimentação</div><div class="val">${CPE!=null?fmtBRL(CPE):'—'}</div><div class="sub">valor gasto ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CAQ · custo por aquisição</div><div class="val">${CAQ!=null?fmtBRL(CAQ):'—'}</div><div class="sub">valor gasto ÷ carrinho</div></div>
-    <div class="kpi" style="border-left-color:#FFD700"><div class="lab">Score geral</div><div class="val" style="font-size:32px">${renderStars(scoreGeral)}</div><div class="sub">CPE 50% · Conversão 30% · Eficiência 20%</div></div>
+    <div class="kpi" style="border-left-color:#FFD700"><div class="lab">Score geral</div><div class="val" style="font-size:32px">${renderStars(scoreGeral)}</div><div class="sub">CPE 33% · Nº Degs 33% · Taxa 20% · Eficiência 14%</div></div>
     ${nPendentes>0?`<div class="kpi pend"><div class="lab">Pendentes</div><div class="val">${nPendentes}</div><div class="sub">completar na planilha</div></div>`:''}`;
 
   // ----- degustações por quadro no monday.com (no período selecionado) -----
@@ -623,7 +629,7 @@ function render(data){
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
         const custoDeg = v.n > 0 ? v.preco/v.n : null;
-        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        const score = calcularScore(cpe, taxa, custoDeg, v.n, benchmarks);
         return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
       }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
@@ -654,7 +660,7 @@ function render(data){
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
         const custoDeg = v.n > 0 ? v.preco/v.n : null;
-        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        const score = calcularScore(cpe, taxa, custoDeg, v.n, benchmarks);
         return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
       }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
@@ -685,7 +691,7 @@ function render(data){
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
         const custoDeg = v.n > 0 ? v.preco/v.n : null;
-        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        const score = calcularScore(cpe, taxa, custoDeg, v.n, benchmarks);
         return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
       }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
