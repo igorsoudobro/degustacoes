@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dobro · Degustações</title>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
 /* fallback: se o CDN principal falhar, carrega de um espelho */
 if(!window.msal){
@@ -635,7 +636,107 @@ function render(data){
     <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>CPE</th><th>CAQ</th><th>Conversão</th><th>Status</th></tr></thead>
     <tbody>${tableRows||`<tr><td colspan="${showCols.length+4}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + mondayCard + degCard + vendCard + fullTable;
+  // ----- histórico de indicadores (por dia) -----
+  function renderHistoricoCard(completas, col){
+    if(completas.length === 0){
+      return `<div class="card"><div class="card-h"><h3>Histórico de indicadores</h3></div>
+        <div class="empty"><h4>Sem dados</h4>Nenhuma degustação completa no período.</div></div>`;
+    }
+    
+    // agrupa por data
+    const byDate = {};
+    completas.forEach(r=>{
+      const dateKey = r.__date ? fmtDate(r.__date) : 'Sem data';
+      if(!byDate[dateKey]) byDate[dateKey] = { preco:0, prov:0, carr:0, n:0 };
+      byDate[dateKey].preco += num(r[col.preco]);
+      byDate[dateKey].prov += num(r[col.provaram]);
+      byDate[dateKey].carr += num(r[col.carrinho]);
+      byDate[dateKey].n++;
+    });
+    
+    // ordena por data
+    const sorted = Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0]));
+    
+    // calcula indicadores por data
+    const datos = sorted.map(([date, v])=>({
+      date,
+      cpe: v.prov > 0 ? v.preco/v.prov : 0,
+      caq: v.carr > 0 ? v.preco/v.carr : 0,
+      prov: v.prov,
+      carr: v.carr,
+      preco: v.preco,
+      n: v.n
+    }));
+    
+    const chartId = 'chart_' + Date.now();
+    return `<div class="card"><div class="card-h"><h3>Histórico de indicadores</h3>
+      <select id="metricSelect_${chartId}" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;color:var(--ink)">
+        <option value="cpe">CPE · Custo por Experimentação</option>
+        <option value="caq">CAQ · Custo por Aquisição</option>
+        <option value="prov">Pessoas que Provaram</option>
+        <option value="carr">Itens no Carrinho</option>
+        <option value="preco">Valor Gasto</option>
+        <option value="n">Número de Degustações</option>
+      </select>
+    </div>
+    <div style="padding:20px;position:relative;height:320px"><canvas id="${chartId}"></canvas></div></div>
+    <script>
+    (function(){
+      const data = ${JSON.stringify(datos)};
+      let chart = null;
+      const selectEl = document.getElementById('metricSelect_${chartId}');
+      const canvasEl = document.getElementById('${chartId}');
+      
+      function drawChart(metric){
+        if(chart) chart.destroy();
+        
+        let label = '', values = [], color = 'rgb(81, 136, 223)';
+        if(metric === 'cpe'){
+          label = 'CPE (R$)'; values = data.map(d=>d.cpe.toFixed(2)); color = 'rgb(224, 161, 0)';
+        }else if(metric === 'caq'){
+          label = 'CAQ (R$)'; values = data.map(d=>d.caq.toFixed(2)); color = 'rgb(216, 199, 51)';
+        }else if(metric === 'prov'){
+          label = 'Provaram'; values = data.map(d=>d.prov); color = 'rgb(31, 157, 107)';
+        }else if(metric === 'carr'){
+          label = 'Carrinho'; values = data.map(d=>d.carr); color = 'rgb(81, 136, 223)';
+        }else if(metric === 'preco'){
+          label = 'Valor gasto (R$)'; values = data.map(d=>d.preco.toFixed(2)); color = 'rgb(217, 83, 79)';
+        }else if(metric === 'n'){
+          label = 'Degustações'; values = data.map(d=>d.n); color = 'rgb(42, 62, 126)';
+        }
+        
+        chart = new Chart(canvasEl, {
+          type: 'bar',
+          data: {
+            labels: data.map(d=>d.date),
+            datasets: [{
+              label: label,
+              data: values,
+              backgroundColor: color,
+              borderColor: color,
+              borderWidth: 1,
+              borderRadius: 4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,.05)' } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      }
+      
+      selectEl.addEventListener('change', (e)=>drawChart(e.target.value));
+      drawChart('cpe');
+    })();
+    </script>`;
+  }
+
+  c.innerHTML = filterBar + debugPanel + pendBanner + `<div class="kpirow">${kpis}</div>` + renderHistoricoCard(completas, col) + mondayCard + degCard + vendCard + fullTable;
 
   // ----- liga eventos dos filtros -----
   const reIni=el('fIni'), reFim=el('fFim'), reDeg=el('fDeg'), reClr=el('fClear'), reApp=el('fApply');
