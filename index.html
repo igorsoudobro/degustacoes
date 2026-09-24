@@ -230,6 +230,12 @@ function fmtNow(d){
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+/* chave estável para detectar linhas novas */
+function rowKey(r, headers){
+  // usa o índice de linha da matriz como chave estável
+  return String(r.__i || 0);
+}
+
 /* ---------- MSAL ---------- */
 function buildMsal(){
   if(!window.msal || !window.msal.PublicClientApplication){
