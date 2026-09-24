@@ -358,8 +358,32 @@ function rowsFromMatrix(m){
 }
 
 /* chave estável de uma linha para detectar novidades */
-function rowKey(o, headers){
-  return headers.map(h => String(o[h]==null?'':o[h])).join('¦');
+/* calcula score em estrelas baseado em CPE, conversão e eficiência */
+function calcularScore(cpe, taxa, custoDeg, benchmarks){
+  if(!cpe || !taxa || !custoDeg) return 0;
+  
+  // normaliza cada métrica em escala 0-1 (onde 1 é "perfeito")
+  // CPE: quanto menor, melhor; inversamente proporcional
+  const scoreCPE = Math.max(0, 1 - (cpe - benchmarks.cpeMin) / (benchmarks.cpeMax - benchmarks.cpeMin));
+  
+  // Taxa de conversão: quanto maior, melhor; diretamente proporcional
+  const scoreTaxa = Math.max(0, Math.min(1, (taxa - benchmarks.taxaMin) / (benchmarks.taxaMax - benchmarks.taxaMin)));
+  
+  // Custo por Deg: quanto menor, melhor; inversamente proporcional
+  const scoreEfic = Math.max(0, 1 - (custoDeg - benchmarks.eficMin) / (benchmarks.eficMax - benchmarks.eficMin));
+  
+  // Pondera: CPE 50%, Taxa 30%, Eficiência 20%
+  const scoreFinal = (scoreCPE * 0.5) + (scoreTaxa * 0.3) + (scoreEfic * 0.2);
+  
+  // converte para 0-5 estrelas
+  return Math.round(scoreFinal * 5 * 2) / 2; // arredonda para .0 ou .5
+}
+
+function renderStars(score){
+  if(!score) return '—';
+  const preenche = Math.floor(score);
+  const temeia = score % 1 !== 0;
+  return '⭐'.repeat(preenche) + (temeia ? '✨' : '') + (5-preenche-temeia > 0 ? '☆'.repeat(5-preenche-temeia) : '');
 }
 
 /* ---------- filtros (estado global) ---------- */
@@ -528,6 +552,7 @@ function render(data){
   const CPE = somaProvaram>0 ? somaPreco/somaProvaram : null;   // custo por experimentação: R$ gastos por pessoa que provou
   const CAQ = somaCarrinho>0 ? somaPreco/somaCarrinho : null;   // custo por aquisição: R$ gastos por item no carrinho
   const taxaConversao = somaProvaram>0 ? (somaCarrinho/somaProvaram*100) : null;   // taxa de conversão: % de quem comprou do que provou
+  const custoPorDegustacao = nCompletas>0 ? somaPreco/nCompletas : null;   // custo por degustação: R$ gastos por evento
 
   // ----- barra de filtros -----
   const degOpts = ['<option value="__all__">Todas as degustadoras</option>']
@@ -547,14 +572,21 @@ function render(data){
     : '';
 
   // ----- KPIs -----
+  const scoreGeral = calcularScore(CPE, taxaConversao, custoPorDegustacao, {
+    cpeMin: CPE, cpeMax: CPE || 1,
+    taxaMin: taxaConversao||0, taxaMax: taxaConversao||1,
+    eficMin: custoPorDegustacao, eficMax: custoPorDegustacao||1
+  });
   const kpis = `
     <div class="kpi accent"><div class="lab">Degustações</div><div class="val">${total}</div><div class="sub">${nCompletas} completa${nCompletas===1?'':'s'}${nPendentes>0?` · ${nPendentes} pendente${nPendentes===1?'':'s'}`:''}</div></div>
     <div class="kpi pos"><div class="lab">Valor gasto</div><div class="val">${fmtBRL(somaPreco)}</div><div class="sub">só completas</div></div>
+    <div class="kpi"><div class="lab">Custo por degustação</div><div class="val">${custoPorDegustacao!=null?fmtBRL(custoPorDegustacao):'—'}</div><div class="sub">valor gasto ÷ eventos</div></div>
     <div class="kpi"><div class="lab">Pessoas que provaram</div><div class="val">${fmtNumBR(somaProvaram)}</div><div class="sub">só completas</div></div>
     <div class="kpi"><div class="lab">Colocaram no carrinho</div><div class="val">${fmtNumBR(somaCarrinho)}</div><div class="sub">só completas</div></div>
     <div class="kpi sens"><div class="lab">Taxa de conversão</div><div class="val">${taxaConversao!=null?taxaConversao.toFixed(1)+'%':'—'}</div><div class="sub">carrinho ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CPE · custo por experimentação</div><div class="val">${CPE!=null?fmtBRL(CPE):'—'}</div><div class="sub">valor gasto ÷ provaram</div></div>
     <div class="kpi sens"><div class="lab">CAQ · custo por aquisição</div><div class="val">${CAQ!=null?fmtBRL(CAQ):'—'}</div><div class="sub">valor gasto ÷ carrinho</div></div>
+    <div class="kpi" style="border-left-color:#FFD700"><div class="lab">Score geral</div><div class="val" style="font-size:32px">${renderStars(scoreGeral)}</div><div class="sub">CPE 50% · Conversão 30% · Eficiência 20%</div></div>
     ${nPendentes>0?`<div class="kpi pend"><div class="lab">Pendentes</div><div class="val">${nPendentes}</div><div class="sub">completar na planilha</div></div>`:''}`;
 
   // ----- degustações por quadro no monday.com (no período selecionado) -----
@@ -565,16 +597,29 @@ function render(data){
   if(col.deg){
     const map = {};
     completas.forEach(r=>{ const k=r.__deg||'—'; if(!map[k])map[k]={preco:0,prov:0,carr:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].carr+=num(r[col.carrinho]); map[k].n++; });
+    
+    // calcula benchmarks de todos os dados
+    const allCPE = Object.values(map).map(v=>v.prov>0?v.preco/v.prov:null).filter(Boolean);
+    const allTaxa = Object.values(map).map(v=>v.prov>0?(v.carr/v.prov*100):null).filter(Boolean);
+    const allEfic = Object.values(map).map(v=>v.n>0?v.preco/v.n:null).filter(Boolean);
+    const benchmarks = {
+      cpeMin: Math.min(...allCPE), cpeMax: Math.max(...allCPE),
+      taxaMin: Math.min(...allTaxa), taxaMax: Math.max(...allTaxa),
+      eficMin: Math.min(...allEfic), eficMax: Math.max(...allEfic)
+    };
+    
     const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
     const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
     degCard = `<div class="card"><div class="card-h"><h3>Análise por degustadora</h3><span class="hint">no período selecionado</span><button id="exportDeg" style="margin-left:auto;background:var(--grey);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--navy);cursor:pointer">📥 Excel</button></div>
-      <div class="scroll"><table id="tableDeg"><thead><tr><th>Degustadora</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>CPE</th><th>CAQ</th><th>Conversão</th></tr></thead><tbody>
+      <div class="scroll"><table id="tableDeg"><thead><tr><th>Degustadora</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>Custo/Deg</th><th>CPE</th><th>CAQ</th><th>Conversão</th><th>Score</th></tr></thead><tbody>
       ${arr.length?arr.map(([k,v])=>{
         const cpe = v.prov > 0 ? v.preco/v.prov : null;
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
-        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td></tr>`;
-      }).join(''):`<tr><td colspan="8" class="empty">Sem dados no período.</td></tr>`}
+        const custoDeg = v.n > 0 ? v.preco/v.n : null;
+        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
+      }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
   }
 
@@ -583,16 +628,29 @@ function render(data){
   if(col.vendedor){
     const map = {};
     completas.forEach(r=>{ const k=r.__vend||'—'; if(!map[k])map[k]={preco:0,prov:0,carr:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].carr+=num(r[col.carrinho]); map[k].n++; });
+    
+    // calcula benchmarks
+    const allCPE = Object.values(map).map(v=>v.prov>0?v.preco/v.prov:null).filter(Boolean);
+    const allTaxa = Object.values(map).map(v=>v.prov>0?(v.carr/v.prov*100):null).filter(Boolean);
+    const allEfic = Object.values(map).map(v=>v.n>0?v.preco/v.n:null).filter(Boolean);
+    const benchmarks = {
+      cpeMin: Math.min(...allCPE), cpeMax: Math.max(...allCPE),
+      taxaMin: Math.min(...allTaxa), taxaMax: Math.max(...allTaxa),
+      eficMin: Math.min(...allEfic), eficMax: Math.max(...allEfic)
+    };
+    
     const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
     const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
     vendCard = `<div class="card"><div class="card-h"><h3>Análise por vendedor</h3><span class="hint">no período selecionado</span><button id="exportVendor" style="margin-left:auto;background:var(--grey);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--navy);cursor:pointer">📥 Excel</button></div>
-      <div class="scroll"><table id="tableVendor"><thead><tr><th>Vendedor</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>CPE</th><th>CAQ</th><th>Conversão</th></tr></thead><tbody>
+      <div class="scroll"><table id="tableVendor"><thead><tr><th>Vendedor</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>Custo/Deg</th><th>CPE</th><th>CAQ</th><th>Conversão</th><th>Score</th></tr></thead><tbody>
       ${arr.length?arr.map(([k,v])=>{
         const cpe = v.prov > 0 ? v.preco/v.prov : null;
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
-        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td></tr>`;
-      }).join(''):`<tr><td colspan="8" class="empty">Sem dados no período.</td></tr>`}
+        const custoDeg = v.n > 0 ? v.preco/v.n : null;
+        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
+      }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
   }
 
@@ -601,16 +659,29 @@ function render(data){
   if(col.canal){
     const map = {};
     completas.forEach(r=>{ const k=r.__canal||'—'; if(!map[k])map[k]={preco:0,prov:0,carr:0,n:0}; map[k].preco+=num(r[col.preco]); map[k].prov+=num(r[col.provaram]); map[k].carr+=num(r[col.carrinho]); map[k].n++; });
+    
+    // calcula benchmarks
+    const allCPE = Object.values(map).map(v=>v.prov>0?v.preco/v.prov:null).filter(Boolean);
+    const allTaxa = Object.values(map).map(v=>v.prov>0?(v.carr/v.prov*100):null).filter(Boolean);
+    const allEfic = Object.values(map).map(v=>v.n>0?v.preco/v.n:null).filter(Boolean);
+    const benchmarks = {
+      cpeMin: Math.min(...allCPE), cpeMax: Math.max(...allCPE),
+      taxaMin: Math.min(...allTaxa), taxaMax: Math.max(...allTaxa),
+      eficMin: Math.min(...allEfic), eficMax: Math.max(...allEfic)
+    };
+    
     const arr = Object.entries(map).sort((a,b)=>b[1].preco-a[1].preco);
     const max = arr.length?Math.max(...arr.map(x=>x[1].preco)):1;
     canalCard = `<div class="card"><div class="card-h"><h3>Análise por canal</h3><span class="hint">no período selecionado</span><button id="exportCanal" style="margin-left:auto;background:var(--grey);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--navy);cursor:pointer">📥 Excel</button></div>
-      <div class="scroll"><table id="tableCanal"><thead><tr><th>Canal</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>CPE</th><th>CAQ</th><th>Conversão</th></tr></thead><tbody>
+      <div class="scroll"><table id="tableCanal"><thead><tr><th>Canal</th><th>Degustações</th><th>Provaram</th><th>Carrinho</th><th>Valor gasto</th><th>Custo/Deg</th><th>CPE</th><th>CAQ</th><th>Conversão</th><th>Score</th></tr></thead><tbody>
       ${arr.length?arr.map(([k,v])=>{
         const cpe = v.prov > 0 ? v.preco/v.prov : null;
         const caq = v.carr > 0 ? v.preco/v.carr : null;
         const taxa = v.prov > 0 ? (v.carr/v.prov*100) : null;
-        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td></tr>`;
-      }).join(''):`<tr><td colspan="8" class="empty">Sem dados no período.</td></tr>`}
+        const custoDeg = v.n > 0 ? v.preco/v.n : null;
+        const score = calcularScore(cpe, taxa, custoDeg, benchmarks);
+        return `<tr><td class="rowlab">${esc(k)}</td><td>${v.n}</td><td>${fmtNumBR(v.prov)}</td><td>${fmtNumBR(v.carr)}</td><td>${fmtBRL(v.preco)}</td><td>${custoDeg!=null?fmtBRL(custoDeg):'—'}</td><td>${cpe!=null?fmtBRL(cpe):'—'}</td><td>${caq!=null?fmtBRL(caq):'—'}</td><td>${taxa!=null?taxa.toFixed(1)+'%':'—'}</td><td>${renderStars(score)}</td></tr>`;
+      }).join(''):`<tr><td colspan="10" class="empty">Sem dados no período.</td></tr>`}
       </tbody></table></div></div>`;
   }
 
@@ -689,6 +760,7 @@ function render(data){
       cpe: v.prov > 0 ? v.preco/v.prov : 0,
       caq: v.carr > 0 ? v.preco/v.carr : 0,
       taxa: v.prov > 0 ? (v.carr/v.prov*100) : 0,
+      custoDeg: v.n > 0 ? v.preco/v.n : 0,
       prov: v.prov,
       carr: v.carr,
       preco: v.preco,
@@ -703,6 +775,7 @@ function render(data){
     
     return `<div class="card"><div class="card-h"><h3>Histórico de indicadores (acumulado)</h3>
       <select id="metricSelect_${chartId}" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;color:var(--ink)">
+        <option value="custoDeg">Custo por Degustação</option>
         <option value="cpe">CPE · Custo por Experimentação</option>
         <option value="caq">CAQ · Custo por Aquisição</option>
         <option value="taxa">Taxa de Conversão</option>
