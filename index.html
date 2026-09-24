@@ -666,6 +666,7 @@ function render(data){
       date,
       cpe: v.prov > 0 ? v.preco/v.prov : 0,
       caq: v.carr > 0 ? v.preco/v.carr : 0,
+      taxa: v.prov > 0 ? (v.carr/v.prov*100) : 0,
       prov: v.prov,
       carr: v.carr,
       preco: v.preco,
@@ -682,6 +683,7 @@ function render(data){
       <select id="metricSelect_${chartId}" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;color:var(--ink)">
         <option value="cpe">CPE · Custo por Experimentação</option>
         <option value="caq">CAQ · Custo por Aquisição</option>
+        <option value="taxa">Taxa de Conversão</option>
         <option value="prov">Pessoas que Provaram</option>
         <option value="carr">Itens no Carrinho</option>
         <option value="preco">Valor Gasto</option>
@@ -709,6 +711,8 @@ function render(data){
             label = 'CPE (R$)'; values = datos.map(d=>d.cpe.toFixed(2)); color = 'rgb(224, 161, 0)';
           }else if(metric === 'caq'){
             label = 'CAQ (R$)'; values = datos.map(d=>d.caq.toFixed(2)); color = 'rgb(216, 199, 51)';
+          }else if(metric === 'taxa'){
+            label = 'Taxa de Conversão (%)'; values = datos.map(d=>d.taxa.toFixed(1)); color = 'rgb(31, 157, 107)';
           }else if(metric === 'prov'){
             label = 'Provaram'; values = datos.map(d=>d.prov); color = 'rgb(31, 157, 107)';
           }else if(metric === 'carr'){
