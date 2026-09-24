@@ -636,29 +636,33 @@ function render(data){
     <div class="scroll"><table><thead><tr>${showCols.map(h=>`<th>${esc(headLabels[h]||h)}</th>`).join('')}<th>CPE</th><th>CAQ</th><th>Conversão</th><th>Status</th></tr></thead>
     <tbody>${tableRows||`<tr><td colspan="${showCols.length+4}" class="empty">Nenhuma degustação neste período/filtro.</td></tr>`}</tbody></table></div></div>`;
 
-  // ----- histórico de indicadores (por dia) -----
+  // ----- histórico de indicadores (acumulado até cada dia) -----
   function renderHistoricoCard(completas, col){
     if(completas.length === 0){
       return `<div class="card"><div class="card-h"><h3>Histórico de indicadores</h3></div>
         <div class="empty"><h4>Sem dados</h4>Nenhuma degustação completa no período.</div></div>`;
     }
     
-    // agrupa por data
+    // ordena por data
+    const sorted = [...completas].sort((a,b)=>(a.__date||new Date())-(b.__date||new Date()));
+    
+    // calcula acumulado progressivo para cada dia
+    let acumPreco = 0, acumProv = 0, acumCarr = 0, acumN = 0;
     const byDate = {};
-    completas.forEach(r=>{
+    
+    sorted.forEach(r=>{
       const dateKey = r.__date ? fmtDate(r.__date) : 'Sem data';
-      if(!byDate[dateKey]) byDate[dateKey] = { preco:0, prov:0, carr:0, n:0 };
-      byDate[dateKey].preco += num(r[col.preco]);
-      byDate[dateKey].prov += num(r[col.provaram]);
-      byDate[dateKey].carr += num(r[col.carrinho]);
-      byDate[dateKey].n++;
+      acumPreco += num(r[col.preco]);
+      acumProv += num(r[col.provaram]);
+      acumCarr += num(r[col.carrinho]);
+      acumN++;
+      
+      // somente registra a última entrada do dia (acumulado até o final do dia)
+      byDate[dateKey] = { preco: acumPreco, prov: acumProv, carr: acumCarr, n: acumN };
     });
     
-    // ordena por data
-    const sorted = Object.entries(byDate).sort((a,b)=>a[0].localeCompare(b[0]));
-    
-    // calcula indicadores por data
-    const datos = sorted.map(([date, v])=>({
+    // calcula indicadores acumulados por data
+    const datos = Object.entries(byDate).map(([date, v])=>({
       date,
       cpe: v.prov > 0 ? v.preco/v.prov : 0,
       caq: v.carr > 0 ? v.preco/v.carr : 0,
@@ -674,7 +678,7 @@ function render(data){
     if(!window.__historicos) window.__historicos = {};
     window.__historicos[chartId] = datos;
     
-    return `<div class="card"><div class="card-h"><h3>Histórico de indicadores</h3>
+    return `<div class="card"><div class="card-h"><h3>Histórico de indicadores (acumulado)</h3>
       <select id="metricSelect_${chartId}" style="border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;color:var(--ink)">
         <option value="cpe">CPE · Custo por Experimentação</option>
         <option value="caq">CAQ · Custo por Aquisição</option>
